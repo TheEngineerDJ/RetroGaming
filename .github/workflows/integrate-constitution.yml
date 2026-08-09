@@ -9,177 +9,29 @@ permissions:
 
 jobs:
   integrate:
-    if: ${{ hashFiles('CONSTITUTION_NEXT.md') != '' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Combine constitution
+      - uses: actions/checkout@v4
+      - name: Integrate
         shell: bash
         run: |
+          test -f CONSTITUTION_NEXT.md || exit 0
           python3 - <<'PY'
           from pathlib import Path
-
-          constitution = Path('Constitution.md').read_text(encoding='utf-8')
-          continuation = Path('CONSTITUTION_NEXT.md').read_text(encoding='utf-8')
-
-          # Strip integration-file framing. Keep only numbered constitutional sections.
-          marker = '# 192. Canonical Software Identity Model'
-          if marker in continuation:
-              continuation = continuation[continuation.index(marker):]
-
-          constitution = constitution.replace('Document Version: 2.3.0', 'Document Version: 3.0.0', 1)
-          constitution = constitution.replace('Document Version: 2.2.0', 'Document Version: 3.0.0', 1)
-          constitution = constitution.replace('Document Version: 2.1.0', 'Document Version: 3.0.0', 1)
-
-          review = r'''
-
----
-
-# 285. Integrated Review — Document Coherence
-
-The constitution has now been reviewed as one document rather than as chronological append-only material.
-
-The recurring backbone is:
-
-Identity → Evidence → Provenance → Relationships → Context → Action.
-
-Sections 0–142 establish product philosophy and broad ontology.
-Sections 143–191 establish the ROM normalization wedge and connect it to the broader identity thesis.
-Sections 192–284 deepen software, hardware, collection, search, evidence, AI, architecture, safety, and implementation.
-
-Repeated ideas are retained where they apply at different abstraction levels. Contradictions must be resolved by rewriting principles, not by relying on section order.
-
----
-
-# 286. Integrated Review — Single Source of Truth
-
-`CONSTITUTION.md` is the only working constitution.
-
-`CONSTITUTION_NEXT.md` was an integration artifact, not a second constitution.
-
-Future constitutional work must modify this file directly.
-
-Do not create parallel files such as `CONSTITUTION_V2.md`, `CONSTITUTION_FINAL.md`, or similar.
-
-Git history preserves prior versions.
-
-The working constitution remains singular.
-
----
-
-# 287. Integrated Review — Canonical Document Rules
-
-The canonical document is `CONSTITUTION.md`.
-
-Its header must contain:
-- Project Name
-- Working Name
-- Document Version
-- Last Updated
-
-The file name remains independent of product naming.
-
-Document version changes when constitutional meaning changes materially.
-
-Git history records historical states. The current constitution records current product truth.
-
----
-
-# 288. Integrated Review — Duplicate Concept Rule
-
-Repeated concepts are acceptable when one section provides domain-specific application of a broader principle.
-
-Contradictory concepts are not acceptable.
-
-When contradiction appears, rewrite the affected principle so the document becomes coherent.
-
-Chronological precedence is not constitutional authority.
-
-Coherence is authority.
-
----
-
-# 289. Integrated Review — Implementation Claims Are Time-Bounded
-
-Implementation facts such as test counts, module counts, libraries, frameworks, and current capabilities are time-sensitive.
-
-They are evidence, not permanent product requirements.
-
-When implementation changes, update implementation-evidence sections rather than allowing stale facts to govern architecture.
-
----
-
-# 290. Integrated Review — Build Readiness
-
-The constitution now provides sufficient direction for serious implementation of the first product wedge.
-
-Remaining work belongs primarily in implementation specifications, schema design, test cases, UX flows, and engineering decisions derived from this document.
-
-The ROM normalization workflow remains the correct first proving ground because it exercises identity, evidence, external datasets, matching, privacy, local storage, batch mutation, interoperability, and trust in one concrete problem.
-
-Implementation must begin from the constitutional model, not from the existing UI scaffold.
-
----
-
-# 291. Integrated Review — Continuing Refinement
-
-The constitution is ready to build from but remains intentionally living.
-
-Future refinement should deepen:
-- canonical software ontology
-- hardware and PCB ontology
-- media and disc structures
-- identity scoring methodology
-- evidence schemas
-- temporal modeling
-- shared-knowledge governance
-- collection privacy
-- frontend projection profiles
-- performance budgets
-- legal boundaries
-- migration strategy
-- API contracts
-
-These are refinement areas, not reasons to delay implementation.
-
----
-
-# 292. Integrated Review — Final Architectural Standard
-
-RetroVault must always be able to answer four questions about consequential knowledge:
-
-**What do we think this is?**
-
-**Why do we think that?**
-
-**How certain are we?**
-
-**What would change our mind?**
-
-The fourth question is essential.
-
-A trustworthy system does not merely record conclusions. It records the conditions under which those conclusions should be revised.
-
-That is the standard for the knowledge graph, identification engine, collection system, preservation layer, AI assistance, and every future subsystem.
-'''
-
-          # Avoid duplicating the review if the workflow is retried.
-          if '# 285. Integrated Review' not in constitution:
-              constitution = constitution.rstrip() + '\n\n---\n\n' + continuation.strip() + review
-
-          Path('Constitution.md').write_text(constitution, encoding='utf-8')
+          c=Path('Constitution.md').read_text()
+          n=Path('CONSTITUTION_NEXT.md').read_text()
+          marker='# 192. Canonical Software Identity Model'
+          if marker in n: n=n[n.index(marker):]
+          c=c.replace('Document Version: 2.3.0','Document Version: 3.0.0',1)
+          if '# 285. Integrated Review' not in c:
+              c=c.rstrip()+'\n\n---\n\n'+n.strip()+'''\n\n---\n\n# 285. Integrated Review — Single Source of Truth\n\n`CONSTITUTION.md` is the only working constitution. `CONSTITUTION_NEXT.md` was an integration artifact, not a second constitution. Git history preserves prior versions.\n\n# 286. Integrated Review — Coherence\n\nThe constitution has been reviewed as one system. Its recurring backbone is:\n\nIdentity → Evidence → Provenance → Relationships → Context → Action.\n\nRepeated concepts remain where they apply at different abstraction levels. Contradictions must be resolved by rewriting principles, not by relying on chronology.\n\n# 287. Integrated Review — Build Readiness\n\nThe constitution provides sufficient direction for serious implementation of the first product wedge. Remaining work belongs primarily in implementation specifications, schema design, tests, UX flows, and engineering decisions derived from this document.\n\nThe ROM normalization workflow remains the first proving ground because it exercises identity, evidence, external datasets, matching, privacy, local storage, batch mutation, interoperability, and trust.\n\n# 288. Integrated Review — Final Architectural Standard\n\nRetroVault must always be able to answer four questions:\n\n**What do we think this is?**\n\n**Why do we think that?**\n\n**How certain are we?**\n\n**What would change our mind?**\n\nA trustworthy system records not only conclusions, but the conditions under which conclusions should be revised.\n'''
+          Path('Constitution.md').write_text(c)
           Path('CONSTITUTION_NEXT.md').unlink()
           Path('.github/workflows/integrate-constitution.yml').unlink()
           PY
-
-      - name: Commit integrated constitution
-        shell: bash
+      - name: Commit
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Constitution.md CONSTITUTION_NEXT.md .github/workflows/integrate-constitution.yml
-          git diff --cached --quiet && exit 0
-          git commit -m 'Merge constitution versions into single source of truth'
-          git push
+          git diff --cached --quiet || (git commit -m 'Merge constitution versions into single source of truth' && git push)
