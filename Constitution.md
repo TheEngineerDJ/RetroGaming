@@ -3,21 +3,21 @@
 
 Project Name: RetroVault
 Working Name: RetroVault
-Document Version: 2.0.0
+Document Version: 2.1.0
 Last Updated: 2026-08-09
 
 ---
 
 # 0. Constitution
 
-This document is the single source of truth for the entire project.
+This document is the single source of truth for the project.
 
-It governs product purpose, philosophy, data, architecture, experience, preservation, community, business model, and future expansion.
+It governs product purpose, philosophy, ontology, data, trust, preservation, user experience, engineering, community, business model, and future expansion.
 
 It is not a backlog.
 It is not a changelog.
-It is not a list of disconnected features.
-It is not a temporary specification.
+It is not a collection of disconnected feature ideas.
+It is not a temporary implementation specification.
 
 Other project documents derive from this document.
 Implementation derives from this document.
@@ -30,6 +30,9 @@ When implementation reveals that a constitutional decision is wrong, the constit
 Earlier sections may be rewritten whenever better reasoning emerges. Historical wording has no special authority. Coherence matters more than chronology.
 
 The constitution must grow as one system.
+
+Length is not the goal.
+Precision is.
 
 ---
 
@@ -44,9 +47,9 @@ Not the most feature-heavy app.
 
 The trusted one.
 
-Retro gaming knowledge is fragmented across manuals, forums, wikis, databases, collector communities, repair sites, videos, marketplace listings, personal archives, and undocumented experience.
+Retro gaming knowledge is fragmented across manuals, specialist databases, forums, wikis, repair communities, collector archives, videos, marketplace listings, personal collections, and undocumented experience.
 
-RetroVault exists to connect that knowledge, preserve its provenance, expose uncertainty, and make it useful.
+RetroVault exists to connect that knowledge, preserve provenance, expose uncertainty, and make it useful.
 
 The successful product should make difficult retro-gaming questions easier to answer years from now than they are today.
 
@@ -68,7 +71,7 @@ A game relates to releases, regions, languages, publishers, developers, hardware
 
 A console relates to revisions, firmware, accessories, controllers, displays, cables, repair procedures, games, peripherals, manufacturing changes, and regional releases.
 
-A cartridge relates to a game, region, label, shell, PCB, ROM, save technology, revision, authenticity evidence, packaging, and collector value.
+A cartridge relates to a game release, region, label, shell, PCB, ROM, save technology, revision, authenticity evidence, packaging, and collector value.
 
 The relationships are often more valuable than the individual records.
 
@@ -129,7 +132,6 @@ If a feature does not strengthen one of those goals, its inclusion requires stro
 # 6. Product Promise
 
 When a user asks RetroVault a question, the system should provide:
-
 - fast answer
 - clear answer
 - useful answer
@@ -169,7 +171,7 @@ RetroVault must prioritize the latter.
 
 ## 7.4 Preservation Before Engagement
 
-The product must preserve useful knowledge even when that knowledge is not commercially exciting or socially engaging.
+Useful knowledge matters even when it is not commercially exciting or socially engaging.
 
 ## 7.5 Unknown Before Incorrect
 
@@ -198,44 +200,40 @@ It is better to understand an entity deeply than to maintain shallow records for
 
 Breadth should expand without sacrificing depth.
 
+## 7.10 Reversibility Before Convenience
+
+When two approaches provide similar value, prefer the one that preserves future options.
+
 ---
 
 # 8. Product Test
 
-Every proposed feature must answer at least one of these:
+Every proposed feature must answer at least one:
 
 Does it improve preservation?
-
 Does it improve verification?
-
 Does it improve discovery?
-
 Does it improve retrieval?
-
 Does it improve understanding?
-
 Does it improve relationships between entities?
-
-Does it materially improve collection intelligence?
-
+Does it improve collection intelligence?
 Does it create defensible proprietary value?
 
 If none apply, reject it.
 
-A feature may still be rejected even when one answer is yes if its complexity, cost, risk, or distraction outweighs its value.
+A feature may still be rejected when one answer is yes if complexity, cost, risk, or distraction outweighs value.
 
 ---
 
-# 9. Defining Product Moat
+# 9. Product Moat
 
-The moat is not the user interface.
+The moat is not the interface.
 
 The moat is not an AI model.
 
 The moat is not a list of features.
 
-The moat is the accumulated system of:
-
+The moat is accumulated:
 - structured entities
 - relationships
 - provenance
@@ -246,122 +244,56 @@ The moat is the accumulated system of:
 - benchmark methodology
 - compatibility knowledge
 - regional distinctions
+- terminology
 - high-quality retrieval
-- consistent terminology
 
 The longer the platform operates correctly, the harder its accumulated knowledge becomes to reproduce.
 
-The product must therefore optimize for compounding knowledge.
+The product must optimize for compounding knowledge.
 
 ---
 
 # 10. Design Axioms
 
 One identity.
-
 Many sources.
-
 Every claim traceable.
-
 Evidence visible.
-
 History preserved.
-
 Unknown allowed.
-
 Relationships explicit.
-
 Search first.
-
 Context available.
-
 Complexity hidden until needed.
 
-The interface should expose structure without making users understand the database.
+The interface should expose structure without requiring users to understand the database.
 
 ---
 
 # 11. Target Users
 
 ## Collector
-
-Needs:
-- variants
-- condition
-- authenticity
-- completeness
-- region
-- value
-- collection organization
-- acquisition history
+Needs variants, condition, authenticity, completeness, region, value, organization, and acquisition history.
 
 ## Player
-
-Needs:
-- what to play
-- best version
-- platform availability
-- compatibility
-- setup information
-- controller support
-- difficulty and duration context
+Needs what to play, best version, availability, compatibility, setup, controller support, difficulty, and duration context.
 
 ## Repairer
-
-Needs:
-- board revisions
-- schematics
-- service manuals
-- known faults
-- replacement parts
-- component information
-- repair procedures
-- revision differences
+Needs board revisions, schematics, service manuals, known faults, components, replacement parts, procedures, and revision differences.
 
 ## Modder
-
-Needs:
-- hardware compatibility
-- firmware
-- patches
-- modifications
-- flash carts
-- accessories
-- known limitations
+Needs hardware compatibility, firmware, patches, modifications, flash carts, accessories, and limitations.
 
 ## Seller
-
-Needs:
-- identification
-- regional value
-- condition context
-- authenticity signals
-- price history
-- variant distinctions
+Needs identification, regional value, condition context, authenticity signals, price history, and variant distinctions.
 
 ## Preservationist
-
-Needs:
-- provenance
-- revisions
-- dumps and hashes where legally appropriate
-- scans
-- manuals
-- photographs
-- historical context
-- source history
+Needs provenance, revisions, dumps and hashes where legally appropriate, scans, manuals, photographs, historical context, and source history.
 
 ## Reviewer / Creator
+Needs structured facts, repeatable benchmarks, comparisons, source links, specifications, and historical context.
 
-Needs:
-- structured facts
-- repeatable benchmarks
-- comparisons
-- source links
-- technical specifications
-- historical context
-
-These user groups overlap.
+These groups overlap.
 The data model must not force a person into one role.
 
 ---
@@ -372,10 +304,10 @@ The data model must not force a person into one role.
 Everything meaningful connects.
 
 ## 12.2 Collection Intelligence
-User-owned objects become structured data with provenance, condition, value context, and relationships.
+Owned objects become structured knowledge with provenance, condition, value context, and relationships.
 
 ## 12.3 Identification
-The platform helps identify unknown physical and digital objects.
+Unknown physical and digital objects can be identified through multiple signals.
 
 ## 12.4 Value Reference
 Pricing becomes historical, regional, condition-aware evidence rather than one arbitrary number.
@@ -397,7 +329,6 @@ Physical products may extend the platform when they reinforce organization, pres
 # 13. What RetroVault Must Never Become
 
 RetroVault must not become:
-
 - an ad-filled content farm
 - an engagement casino
 - a generic AI answer machine
@@ -406,17 +337,14 @@ RetroVault must not become:
 - a marketplace optimized for transaction volume over trust
 - a nostalgia-themed toy with weak data underneath
 - an SEO site producing pages solely to capture search traffic
-- a database dump that users cannot understand
-- a closed system that prevents users from exporting their own information
+- a database dump users cannot understand
+- a closed system that prevents users from exporting their information
 
 ---
 
 # 14. Trust Model
 
-Trust is a system property.
-
 Trust comes from:
-
 - source provenance
 - visible uncertainty
 - consistent terminology
@@ -424,19 +352,18 @@ Trust comes from:
 - contributor reputation
 - repeatable measurements
 - separation of observation and inference
-- clear distinction between official and community information
+- distinction between official and community information
 
-The product must show enough evidence for users to understand why a claim exists.
+Important claims must have a path back to evidence.
 
-Not every page needs every source exposed immediately.
-But important claims must always have a path back to evidence.
+Trust is not a visual style.
+It is an observable property of the system.
 
 ---
 
 # 15. Source Hierarchy
 
 ## Level 1 — Primary Evidence
-
 - original hardware
 - original physical media
 - official manuals
@@ -448,7 +375,6 @@ But important claims must always have a path back to evidence.
 - direct archival evidence
 
 ## Level 2 — Strong Secondary Evidence
-
 - physical inspection
 - PCB analysis
 - controlled testing
@@ -458,7 +384,6 @@ But important claims must always have a path back to evidence.
 - photographed evidence
 
 ## Level 3 — Community Evidence
-
 - community submissions
 - forum reports
 - collector observations
@@ -467,7 +392,6 @@ But important claims must always have a path back to evidence.
 - user photographs without full provenance
 
 ## Level 4 — Inference
-
 - AI suggestions
 - heuristic matching
 - statistical inference
@@ -477,14 +401,16 @@ But important claims must always have a path back to evidence.
 Level 4 can be useful.
 Level 4 must never silently become Level 1.
 
+Source quality is contextual.
+A source can be authoritative for one question and weak for another.
+
 ---
 
 # 16. Claim Model
 
-A fact should not simply exist as text.
+Important information should be represented as claims rather than anonymous text.
 
-Important information should be represented as a claim with:
-
+A claim consists conceptually of:
 - subject
 - predicate
 - value or object
@@ -496,28 +422,50 @@ Important information should be represented as a claim with:
 - verification state
 - historical validity
 
-This allows competing claims to coexist without corrupting the underlying record.
-
 Example:
 
 Console X → uses → CPU Y
 
-Console X → uses revised CPU → CPU Z
+Console X revision 2 → uses → CPU Z
 
-Both can be true when tied to different hardware revisions.
+Both can be true.
 
-The database must model that difference rather than choosing one simplified answer.
+The system must model scope rather than choose one simplified answer.
 
 ---
 
-# 17. Confidence
+# 17. Evidence Model
 
-Confidence is not truth.
+Evidence is not the same as source.
+
+A source is an origin.
+Evidence is the specific material supporting a claim.
+
+One source may contain many evidence items.
+One evidence item may support multiple claims.
+
+Evidence may be:
+- document passage
+- photograph
+- measurement
+- physical inspection
+- scan
+- video observation
+- archival record
+- contemporaneous publication
+- reproducible test
+
+Important evidence should be addressable where practical.
+
+A citation that merely says "source: website" is weaker than one that identifies the exact evidence supporting the claim.
+
+---
+
+# 18. Confidence
 
 Confidence describes how strongly available evidence supports a claim.
 
 Suggested initial scale:
-
 - 100 = directly verified
 - 90 = multiple strong independent sources
 - 75 = highly likely
@@ -528,25 +476,13 @@ Suggested initial scale:
 These values are guidance, not mathematical truth.
 
 Confidence must be explainable.
-
 A score without evidence is decoration.
 
 ---
 
-# 18. Uncertainty Rules
-
-Unknown is valid.
-
-Uncertain is valid.
-
-Disputed is valid.
-
-Contradictory is valid.
-
-Historical error is valid.
+# 19. Uncertainty Model
 
 The system must distinguish:
-
 - unknown
 - unverified
 - disputed
@@ -556,41 +492,40 @@ The system must distinguish:
 - deprecated
 - disproven
 
-Do not collapse these states into one boolean such as `verified = true`.
+Do not collapse these states into one boolean.
+
+Unknown means insufficient information.
+Unverified means a claim exists without sufficient verification.
+Disputed means credible evidence conflicts.
+Inferred means derived rather than directly observed.
+Probable means evidence strongly favors one explanation.
+Verified means evidence meets the applicable verification standard.
+Deprecated means historically valid but no longer current.
+Disproven means evidence has invalidated the claim.
 
 ---
 
-# 19. Preservation Rules
+# 20. Preservation Rules
 
 Never delete historical knowledge merely because it is inconvenient.
 
 Archive instead.
-
 Version important records.
-
 Preserve sources.
-
 Preserve old names.
-
 Preserve discontinued revisions.
-
 Preserve historical prices.
-
-Preserve obsolete compatibility information when historically useful.
-
+Preserve obsolete compatibility when historically useful.
 Preserve competing claims when unresolved.
-
 Preserve correction history.
 
-A broken source can still be useful evidence that once existed.
-
+A broken source can still be useful evidence.
 A deprecated product can still matter.
-
 A failed hypothesis can still explain how knowledge evolved.
 
 ---
 
-# 20. Identity Rules
+# 21. Identity Rules
 
 Identity and attributes must remain separate.
 
@@ -603,8 +538,6 @@ A physical object can have:
 - provenance
 
 These must not be collapsed into one name string.
-
-For example:
 
 "Pokémon Red" is not sufficient identity for every physical copy.
 
@@ -623,7 +556,7 @@ The same principle applies to hardware.
 
 ---
 
-# 21. Region Rules
+# 22. Region Rules
 
 Region is first-class data.
 
@@ -645,25 +578,17 @@ Region can affect:
 - pricing
 - collector value
 
-A global object may have many regional releases.
-
-Regional releases should link to the parent object without losing their individual identity.
+Regional releases should link to parent concepts without losing individual identity.
 
 ---
 
-# 22. Version and Revision Rules
+# 23. Version and Revision Rules
 
 Version is not synonymous with edition.
-
 Revision is not synonymous with region.
-
 Remake is not synonymous with port.
-
 Port is not synonymous with emulation.
-
 Remaster is not synonymous with original release.
-
-The ontology must explicitly represent these distinctions.
 
 Hardware revisions must be independently addressable when they change meaningful behavior, components, compatibility, appearance, manufacturing, or repair requirements.
 
@@ -671,14 +596,33 @@ Software versions must be independently addressable when behavior, compatibility
 
 ---
 
-# 23. Condition Rules
+# 24. Variant Rules
 
-Condition describes the state of an object.
+Variant describes meaningful differences within an identity family.
 
+Variants may include:
+- packaging
+- label
+- shell
+- controller bundle
+- color
+- print run
+- regional presentation
+- manufacturing change
+- promotional bundle
+
+Cosmetic differences should not automatically create separate canonical entities.
+
+The threshold for creating a variant is whether the distinction is useful for identification, preservation, collection, compatibility, history, or value.
+
+---
+
+# 25. Condition Rules
+
+Condition describes object state.
 It does not define identity.
 
 Suggested bands:
-
 - sealed
 - near mint
 - excellent
@@ -691,24 +635,41 @@ Suggested bands:
 - reproduction
 - custom
 
-Condition systems may become more granular later.
+Condition labels are subjective.
+Objective observations should accompany them where practical.
 
-Never allow condition labels to overwrite objective observations.
-
-"Good" is subjective.
-
+"Good" is a judgment.
 "Original shell, heavy scratches, label 80% intact" is evidence.
-
-Both can coexist.
 
 ---
 
-# 24. Price System
+# 26. Authenticity Rules
 
-Price is an observation, not a permanent property of an object.
+Authenticity is a claim, not a decorative badge.
 
-Every price observation should preserve, where available:
+The platform should distinguish:
+- verified original
+- probably original
+- uncertain
+- suspected reproduction
+- confirmed reproduction
+- modified original
+- counterfeit
+- unknown
 
+Authenticity claims should cite observable evidence where possible.
+
+Image similarity alone should not be treated as definitive authenticity proof.
+
+Modified originals must not automatically be treated as reproductions.
+
+---
+
+# 27. Price System
+
+Price is an observation, not a permanent property.
+
+Every price observation should preserve where available:
 - amount
 - currency
 - region
@@ -726,7 +687,6 @@ Every price observation should preserve, where available:
 Never represent one number as universal value.
 
 Price presentation should prefer:
-
 - sample count
 - recent observations
 - low
@@ -741,14 +701,30 @@ Sparse data must visibly remain sparse.
 
 ---
 
-# 25. Benchmark System
+# 28. Rarity Rules
+
+Rarity is not the same as current marketplace scarcity.
+
+Rarity may depend on:
+- production quantities
+- distribution
+- regional release
+- survival rate
+- documented availability
+- observed population
+- historical evidence
+
+When evidence is weak, describe observed scarcity rather than inventing an absolute rarity score.
+
+Never manufacture rarity to increase perceived value.
+
+---
+
+# 29. Benchmark System
 
 A benchmark is a measurement event.
 
-A benchmark must not be treated as an intrinsic property unless methodology supports that conclusion.
-
 Every benchmark should preserve:
-
 - subject hardware
 - hardware revision
 - firmware
@@ -763,24 +739,21 @@ Every benchmark should preserve:
 - units
 - source
 
-Measurements must use explicit units.
-
 Battery claims must identify test conditions.
-
 Latency claims must identify measurement method.
-
 Performance claims must distinguish measured data from subjective impressions.
+
+Benchmarks must be reproducible where practical.
 
 ---
 
-# 26. Compatibility System
+# 30. Compatibility System
 
 Compatibility is conditional.
 
 A simple yes/no model is insufficient for complex retro hardware.
 
 Compatibility may depend on:
-
 - hardware revision
 - firmware
 - region
@@ -793,8 +766,7 @@ Compatibility may depend on:
 - display
 - controller
 
-Compatibility states should support at least:
-
+Compatibility states should support:
 - confirmed compatible
 - compatible with conditions
 - partially compatible
@@ -808,12 +780,11 @@ Every meaningful compatibility claim should explain why.
 
 ---
 
-# 27. Identification System
+# 31. Identification System
 
-Identification is a core product capability.
+Identification is a core capability.
 
-The platform should help identify unknown objects through:
-
+The platform should use multiple signals:
 - barcode
 - serial number
 - catalogue number
@@ -831,30 +802,47 @@ The platform should help identify unknown objects through:
 
 Identification must produce candidates with evidence.
 
-The system should not merely output a guess.
+A good result answers:
+- what is it?
+- why do we think so?
+- what alternatives exist?
+- what evidence distinguishes them?
+- what confidence is justified?
 
-A good identification result answers:
-
-What is it?
-
-Why do we think so?
-
-What alternatives exist?
-
-What evidence would distinguish them?
-
-What confidence should the user have?
+The system must prefer "unknown" over a confident wrong identification.
 
 ---
 
-# 28. Search Philosophy
+# 32. Entity Resolution
+
+Entity matching is one of the highest-risk automated operations.
+
+Two records may refer to the same object.
+Two records may look identical while representing different revisions.
+
+Matching must therefore distinguish:
+- exact identity
+- probable identity
+- possible identity
+- related identity
+- duplicate
+- distinct entity
+- unresolved
+
+Automated matching may suggest relationships.
+High-impact merges require verification.
+
+A false merge can permanently contaminate downstream data.
+
+---
+
+# 33. Search Philosophy
 
 Search is the front door.
 
-Users should not need to know RetroVault's internal taxonomy to use it.
+Users should not need to know the internal taxonomy.
 
 Search must support:
-
 - exact titles
 - aliases
 - regional titles
@@ -874,48 +862,41 @@ Search must support:
 - benchmark terminology
 - natural-language questions
 
-Search should understand entity relationships.
+Search should understand relationships.
 
 Examples:
+- games like Golden Sun
+- Japanese Mega Drive games
+- Game Boy cartridges with battery saves
+- which GBA revision has the brighter screen
+- fake Pokémon cartridge signs
+- controllers compatible with original SNES
+- best handheld for PS1 under R3000
 
-"games like Golden Sun"
-
-"Japanese Mega Drive games"
-
-"Game Boy cartridges with battery saves"
-
-"which GBA revision has the brighter screen"
-
-"fake Pokémon cartridge signs"
-
-"controllers compatible with original SNES"
-
-"best handheld for PS1 under R3000"
-
-The result should not merely be a list of matching text.
-
-It should expose the answer, supporting evidence, and useful relationships.
+Results should expose the answer, supporting evidence, and useful relationships.
 
 ---
 
-# 29. Search Result Hierarchy
+# 34. Search Result Hierarchy
 
-Search results should prioritize:
-
+Prioritize:
 1. direct answer
 2. exact entity
 3. highly relevant related entities
 4. supporting evidence
 5. deeper exploration
 
-The system must avoid burying the obvious answer under SEO-style filler.
+Do not bury answers beneath SEO filler.
+
+Search ranking must optimize relevance and trust, not merely engagement.
+
+Commercial relationships must not silently override factual relevance.
 
 ---
 
-# 30. Core Entities
+# 35. Core Ontology
 
-The initial ontology includes:
-
+Initial entities include:
 - Game
 - Game Release
 - Franchise
@@ -952,6 +933,7 @@ The initial ontology includes:
 - Video
 - Document
 - Source
+- Evidence
 - Claim
 - Collection Item
 - Collection
@@ -959,18 +941,16 @@ The initial ontology includes:
 - Community Note
 - Historical Event
 
-This list is not frozen.
+This ontology is not frozen.
 
 New entities require an ontological reason.
-
-Do not create entities merely because creating a table feels convenient.
+Do not create entities merely because a database table is convenient.
 
 ---
 
-# 31. Entity Rules
+# 36. Entity Rules
 
 Every entity should have:
-
 - stable identifier
 - entity type
 - canonical name
@@ -981,7 +961,6 @@ Every entity should have:
 - modification timestamp
 
 Important entities should additionally support:
-
 - confidence
 - sources
 - historical versions
@@ -993,9 +972,9 @@ A record should never need its name string to encode all identity information.
 
 ---
 
-# 32. Relationship Rules
+# 37. Relationship Rules
 
-Everything meaningful should connect.
+Relationships are first-class data.
 
 Examples:
 
@@ -1037,18 +1016,15 @@ Benchmark → hardware + configuration + methodology
 Price → object + market context
 Claim → subject + predicate + object + evidence
 
-Relationships are first-class data.
-
 ---
 
-# 33. Collection Intelligence
+# 38. Collection Intelligence
 
 A collection is not merely a list of owned games.
 
-A collection represents a user's relationship with physical and digital objects.
+It represents the user's relationship with physical and digital objects.
 
 A collection item may include:
-
 - object identity
 - acquisition date
 - acquisition price
@@ -1066,44 +1042,49 @@ A collection item may include:
 
 Private collection data belongs to the user.
 
-The platform must not exploit collection data to manipulate users into purchases.
+The platform must not exploit collection data to manipulate purchases.
 
 ---
 
-# 34. Collection Philosophy
+# 39. Collection Philosophy
 
 The platform should help users answer:
-
-What do I own?
-
-What exactly do I own?
-
-What am I missing?
-
-What version do I own?
-
-What is unusual about it?
-
-What is it worth?
-
-What condition is it in?
-
-What should I preserve?
-
-What duplicates do I have?
-
-What connects these objects?
+- What do I own?
+- What exactly do I own?
+- What am I missing?
+- What version do I own?
+- What is unusual about it?
+- What is it worth?
+- What condition is it in?
+- What should I preserve?
+- What duplicates do I have?
+- What connects these objects?
 
 Collection intelligence should turn ownership into knowledge.
 
 ---
 
-# 35. AI Rules
+# 40. Collection Privacy
+
+Private collection data is not public knowledge by default.
+
+The system should separate:
+- private ownership
+- public canonical identity
+- public contribution
+- public wishlists
+- private notes
+- private valuations
+
+Users must control what collection information becomes public.
+
+---
+
+# 41. AI Rules
 
 AI is an assistant, never the source of truth.
 
 AI may:
-
 - search semantically
 - summarize source clusters
 - OCR text
@@ -1113,34 +1094,32 @@ AI may:
 - classify images
 - translate documents
 - identify probable hardware characteristics
-- suggest likely relationships
+- suggest relationships
 - detect anomalies
 - assist contributor workflows
 
 AI must not:
-
 - invent facts
 - invent prices
+- fabricate sources
 - silently merge records
 - overwrite verified information
 - hide uncertainty
-- fabricate sources
 - present generated text as primary evidence
 
 AI-generated conclusions must remain distinguishable from verified records.
 
-Where possible, AI should expose the evidence supporting its suggestion.
+Where possible, AI should expose evidence supporting its suggestion.
 
 ---
 
-# 36. Human Verification
+# 42. Human Verification
 
 Human review is required for important canonical changes.
 
-The higher the impact of a claim, the stronger the review requirement.
+Higher-impact claims require stronger review.
 
-High-impact examples:
-
+Examples:
 - canonical identity merges
 - hardware revision definitions
 - authenticity claims
@@ -1154,14 +1133,12 @@ Automation must not automatically turn uncertainty into canonical truth.
 
 ---
 
-# 37. Community Rules
+# 43. Community Rules
 
 Community is a source of knowledge.
-
 Community is not automatically the authority.
 
 Community may:
-
 - submit data
 - submit photographs
 - submit measurements
@@ -1171,10 +1148,9 @@ Community may:
 - provide historical context
 - debate disputed claims
 
-Community submissions must retain attribution and provenance.
+Community submissions retain attribution and provenance.
 
-Users must be able to distinguish:
-
+Users must distinguish:
 - official information
 - verified information
 - community observation
@@ -1185,14 +1161,11 @@ Popularity must never determine factual truth by itself.
 
 ---
 
-# 38. Contribution Model
+# 44. Contribution Quality
 
 Contribution should reward quality rather than volume.
 
-A useful contributor is one who improves the graph.
-
-Signals may include:
-
+Useful signals include:
 - accuracy
 - evidence quality
 - correction history
@@ -1201,22 +1174,19 @@ Signals may include:
 - completeness
 - respectful collaboration
 
-Gamification must not encourage low-quality data generation.
-
 No meaningless points economy.
 No contribution farming.
 No artificial streak pressure.
 
+Gamification must never incentivize low-quality data generation.
+
 ---
 
-# 39. Moderation Philosophy
+# 45. Moderation Philosophy
 
 Moderation protects knowledge quality.
 
-It must not exist primarily to manufacture engagement.
-
 Moderation should distinguish:
-
 - incorrect information
 - unsupported information
 - disputed information
@@ -1229,16 +1199,15 @@ Disagreement is not abuse.
 
 A minority claim with strong evidence must remain possible.
 
+Moderation decisions should be auditable at appropriate levels.
+
 ---
 
-# 40. Preservation Philosophy
+# 46. Preservation Philosophy
 
 RetroVault is a preservation project as much as a consumer product.
 
-Preservation means more than storing ROM files.
-
-It includes preserving:
-
+Preservation includes:
 - names
 - identities
 - variants
@@ -1255,16 +1224,15 @@ It includes preserving:
 - failed claims
 - terminology
 
-Preservation must respect applicable copyright, licensing, and access restrictions.
+Preservation does not automatically grant redistribution rights.
 
-The platform should preserve metadata and provenance even when distributing an underlying asset is not legally or practically appropriate.
+Metadata and provenance should remain useful even when underlying assets cannot legally or practically be redistributed.
 
 ---
 
-# 41. Digital Preservation
+# 47. Digital Preservation
 
 Where legally and technically appropriate, preservation metadata may include:
-
 - file identity
 - hashes
 - format
@@ -1279,12 +1247,11 @@ The system must distinguish metadata about an archival object from possession or
 
 ---
 
-# 42. Physical Preservation
+# 48. Physical Preservation
 
 Physical objects are evidence.
 
 Photographs should preserve details such as:
-
 - labels
 - serial numbers
 - PCB layouts
@@ -1298,16 +1265,15 @@ Photographs should preserve details such as:
 
 Images should retain provenance where possible.
 
-Do not crop away the very detail that makes an image useful as evidence.
+Do not crop away the detail that makes an image useful as evidence.
 
 ---
 
-# 43. Repair Knowledge
+# 49. Repair Knowledge
 
-Repair information should be treated as structured knowledge, not merely articles.
+Repair information should be structured knowledge.
 
 A repair record may contain:
-
 - device
 - revision
 - symptom
@@ -1322,21 +1288,17 @@ A repair record may contain:
 - contributor
 - date
 
-Procedures must distinguish verified repair methods from anecdotal suggestions.
+Procedures must distinguish verified methods from anecdotal suggestions.
 
-Safety warnings must be prominent when applicable.
+Safety warnings must be prominent where applicable.
 
 ---
 
-# 44. Compatibility Philosophy
+# 50. Compatibility Philosophy
 
-Compatibility is one of the platform's highest-value relationship types.
+Compatibility is a high-value relationship type.
 
-The user does not merely need to know whether two things are related.
-
-The user needs to know the conditions under which they work.
-
-Therefore compatibility records should prefer:
+Prefer:
 
 Object A + configuration + Object B → result + conditions + evidence
 
@@ -1344,14 +1306,15 @@ rather than:
 
 Object A → compatible with Object B
 
+The conditions are often the knowledge.
+
 ---
 
-# 45. Marketplace Philosophy
+# 51. Marketplace Philosophy
 
-A marketplace may exist only if it improves user knowledge or transaction trust.
+A marketplace may exist only if it improves knowledge or transaction trust.
 
-Marketplace features may include:
-
+Potential features:
 - listing comparison
 - historical sales
 - condition context
@@ -1360,8 +1323,7 @@ Marketplace features may include:
 - completeness analysis
 - variant identification
 
-The platform must not manipulate users through:
-
+Never manipulate users through:
 - fake scarcity
 - fabricated demand
 - hidden sponsored rankings
@@ -1372,12 +1334,11 @@ If commercial incentives conflict with factual presentation, factual presentatio
 
 ---
 
-# 46. Physical Product Philosophy
+# 52. Physical Product Philosophy
 
 Physical products may extend the platform where they solve real problems.
 
 Potential categories:
-
 - storage
 - display
 - protection
@@ -1389,46 +1350,37 @@ Potential categories:
 
 Physical products should connect to exact digital records where useful.
 
-A QR code, identifier, or similar bridge may connect a physical object to its knowledge record.
-
 Physical products must not exist merely because merchandise can generate revenue.
 
 ---
 
-# 47. User Experience Rules
+# 53. User Experience Rules
 
 ## Speed
-
 Search should feel immediate.
 
 ## Clarity
-
 A screen should have a dominant purpose.
 
 ## Density
-
 High information density is acceptable when hierarchy remains clear.
 
 ## Calm
-
 The interface should not constantly demand attention.
 
 ## Confidence
-
 Users should understand what is known and what is uncertain.
 
 ## Depth
-
 Simple first view.
-Deep information available immediately after.
+Deep information immediately available after.
 
 ## Escape
-
-Users should always be able to move backward, close detail, or return to their original task.
+Users can always move backward or return to their task.
 
 ---
 
-# 48. UI Tone
+# 54. UI Tone
 
 Premium.
 Measured.
@@ -1438,7 +1390,6 @@ Technical where appropriate.
 Human where useful.
 
 Never:
-
 - childish
 - cartoonish
 - noisy
@@ -1452,33 +1403,177 @@ The interface provides structure.
 
 ---
 
-# 49. Information Architecture
+# 55. Information Architecture
 
-The platform should organize around user intent rather than internal database tables.
+Organize around user intent, not database tables.
 
 Users think:
+- What is this?
+- Is this genuine?
+- What does it work with?
+- What version is this?
+- What is it worth?
+- What should I buy?
+- How do I repair it?
+- What happened historically?
 
-"What is this?"
-
-"Is this genuine?"
-
-"What does it work with?"
-
-"What version is this?"
-
-"What is it worth?"
-
-"What should I buy?"
-
-"How do I repair it?"
-
-"What happened historically?"
-
-The interface should answer those questions directly while allowing users to explore the underlying graph.
+The interface should answer those questions directly while allowing exploration of the graph.
 
 ---
 
-# 50. Data Philosophy
+# 56. Search as Universal Entry Point
+
+Search should be available from anywhere.
+
+A user should be able to begin with:
+- title
+- photo
+- barcode
+- serial
+- symptom
+- accessory
+- hardware model
+- natural-language question
+
+The platform should convert ambiguous input into useful candidates rather than forcing users through a rigid taxonomy.
+
+---
+
+# 57. Graph Navigation
+
+The graph should feel like exploration, not database administration.
+
+From a game, users may naturally discover:
+- releases
+- regions
+- hardware
+- versions
+- manuals
+- developers
+- publishers
+- patches
+- compatibility
+- prices
+- related games
+
+From hardware:
+- revisions
+- firmware
+- accessories
+- controllers
+- games
+- repairs
+- benchmarks
+- known faults
+
+Relationships should be useful, not merely numerous.
+
+---
+
+# 58. Evidence Presentation
+
+Evidence should be close to the claim it supports.
+
+The interface should distinguish:
+- verified fact
+- observed measurement
+- community report
+- inference
+- opinion
+
+Do not hide important evidence behind unrelated screens.
+
+The user should be able to move from claim → evidence → source.
+
+---
+
+# 59. Content Quality
+
+Important structured knowledge should answer:
+- What is this?
+- Where did it come from?
+- How certain are we?
+- When was it true?
+- What does it connect to?
+- Can someone challenge it?
+
+If these cannot be answered, the record is incomplete.
+
+---
+
+# 60. Naming Rules
+
+Canonical names must be:
+- stable
+- unambiguous
+- human-readable
+- source-aware
+- region-aware where necessary
+
+Do not use marketing language as canonical identity.
+
+Do not allow marketplace naming conventions to define canonical entities.
+
+Aliases should preserve useful real-world terminology.
+
+---
+
+# 61. Status Model
+
+Entities and claims need explicit lifecycle status.
+
+Potential statuses:
+- draft
+- incomplete
+- active
+- verified
+- disputed
+- deprecated
+- archived
+- rejected
+- superseded
+
+Status describes lifecycle.
+Confidence describes evidence.
+Verification describes review state.
+These remain separate.
+
+---
+
+# 62. No Silent Mutation
+
+Important data must never change without traceability.
+
+When a canonical value changes, retain:
+- previous value
+- new value
+- reason
+- contributor
+- timestamp
+- supporting evidence
+
+A clean database with no history can be less trustworthy than a messy database with a complete audit trail.
+
+---
+
+# 63. No Orphan Knowledge
+
+Useful records should connect to the graph.
+
+An isolated photo is less useful than:
+
+hardware → revision → region → source → claim
+
+An isolated price is less useful than:
+
+game release → region → condition → marketplace → price observation
+
+Orphan records may exist temporarily during ingestion.
+They should not become permanent architecture.
+
+---
+
+# 64. Data Philosophy
 
 Database is core.
 UI is a window.
@@ -1486,13 +1581,7 @@ AI is an assistant.
 
 Never reverse that hierarchy.
 
-Data must come before:
-
-- screens
-- prompts
-- styling
-- marketing
-- monetization
+Data must come before screens, prompts, styling, marketing, and monetization.
 
 If the data model is weak, every future feature becomes harder.
 
@@ -1500,12 +1589,11 @@ If the data model is strong, many future experiences become possible without cha
 
 ---
 
-# 51. Data Model Rules
+# 65. Data Model Rules
 
 The data model is law.
 
 Rules:
-
 - stable identifiers
 - explicit types
 - explicit units
@@ -1522,21 +1610,16 @@ Do not encode structured meaning solely inside free-text fields when a relations
 
 ---
 
-# 52. Data Quality
+# 66. Data Quality
 
 Data quality is multidimensional.
 
-A record can be:
+A record can be complete but poorly sourced.
+A record can be incomplete but strongly sourced.
+A record can be detailed but contradictory.
+A record can be sparse but highly reliable.
 
-- complete but poorly sourced
-- incomplete but strongly sourced
-- detailed but contradictory
-- sparse but highly reliable
-
-Therefore quality cannot be represented by one simplistic score.
-
-The system should eventually distinguish:
-
+Therefore quality should distinguish:
 - completeness
 - confidence
 - provenance quality
@@ -1544,9 +1627,11 @@ The system should eventually distinguish:
 - verification state
 - consistency
 
+No universal quality score should hide these dimensions.
+
 ---
 
-# 53. Canonical Identity
+# 67. Canonical Identity
 
 Canonical records represent conceptual entities.
 
@@ -1556,59 +1641,250 @@ Canonicalization must never erase meaningful distinctions.
 
 A merge is a high-impact operation.
 
-When uncertainty exists, link records provisionally rather than permanently merging them.
+When uncertainty exists, link provisionally rather than permanently merging.
 
 ---
 
-# 54. History Model
+# 68. History Model
 
 Important records should support historical state.
 
 History should answer:
-
-What did we believe?
-
-When did we believe it?
-
-Why did we believe it?
-
-What changed?
-
-What evidence caused the change?
-
-Who changed it?
+- What did we believe?
+- When did we believe it?
+- Why did we believe it?
+- What changed?
+- What evidence caused the change?
+- Who changed it?
 
 The latest value alone is insufficient for preservation-grade data.
 
 ---
 
-# 55. Documentation Rules
+# 69. Observation vs Interpretation
 
-Documentation is part of the product.
+The platform must distinguish what was observed from what was inferred.
 
-Documentation must define:
+Observation:
+"PCB contains component X."
 
-- ontology
-- entity definitions
-- relationship definitions
-- source rules
-- confidence rules
-- naming rules
-- revision rules
-- benchmark methodology
-- compatibility methodology
-- moderation rules
-- edit rules
-- status rules
+Interpretation:
+"This indicates hardware revision 2."
 
-If documentation drifts, the system drifts.
+Both may be valid.
+They are not the same claim.
+
+This distinction is fundamental to trustworthy identification and preservation.
 
 ---
 
-# 56. Engineering Rules
+# 70. Provenance Chain
+
+Important data should be traceable through a provenance chain:
+
+Source → Evidence → Claim → Entity → Derived Output
+
+Derived outputs include:
+- search results
+- recommendations
+- identification results
+- price summaries
+- compatibility summaries
+- collection valuations
+
+When a source is withdrawn or a claim changes, the system should know which outputs depend on it.
+
+---
+
+# 71. Source Ingestion Philosophy
+
+External data is raw material, not truth.
+
+Imported data must retain source identity and provenance.
+
+Different sources may disagree.
+
+The system must preserve source-level information rather than flattening everything into one anonymous record.
+
+Ingestion must be designed for reconciliation.
+
+---
+
+# 72. Data Import Pipeline
+
+Conceptually separate:
+
+1. acquisition
+2. parsing
+3. normalization
+4. matching
+5. validation
+6. reconciliation
+7. verification
+8. publication
+
+Imported data must not automatically become canonical data.
+
+Every stage should be observable.
+
+---
+
+# 73. Observable Pipelines
+
+A pipeline must make it possible to answer:
+- What entered?
+- What changed?
+- What was rejected?
+- What was inferred?
+- What was verified?
+- What was published?
+
+Silent ingestion is unacceptable for important data.
+
+---
+
+# 74. Data Reconciliation
+
+When sources disagree, do not overwrite one with another merely because one arrived later.
+
+Reconciliation should compare:
+- source authority
+- evidence quality
+- scope
+- date
+- specificity
+- independence
+- consistency with known relationships
+
+The result may be:
+- one accepted claim
+- multiple scoped claims
+- unresolved dispute
+- request for additional evidence
+
+---
+
+# 75. No Single Score For Everything
+
+Avoid universal scores for:
+- game quality
+- rarity
+- value
+- preservation importance
+- historical importance
+- console desirability
+- reliability
+
+Different dimensions should remain distinct unless methodology justifies combination.
+
+---
+
+# 76. Comparison Philosophy
+
+RetroVault should excel at comparisons.
+
+Normalize relevant dimensions without hiding meaningful differences.
+
+Compare:
+- hardware
+- revisions
+- games
+- regional releases
+- accessories
+- prices
+- benchmarks
+- compatibility
+
+Never reduce a multidimensional comparison to one arbitrary score.
+
+---
+
+# 77. Recommendation Philosophy
+
+Recommendations must be explainable.
+
+If RetroVault recommends something, the user should understand why.
+
+Possible factors:
+- compatibility
+- price
+- condition
+- region
+- collection fit
+- preferences
+- benchmark performance
+- historical importance
+
+Commercial revenue must never be the hidden sole ranking factor.
+
+---
+
+# 78. No Fake Authority
+
+The platform must never use visual design to imply certainty that data does not possess.
+
+Avoid:
+- arbitrary confidence badges
+- unsupported expert labels
+- fake certification symbols
+- unexplained "best" rankings
+- invented rarity scores
+
+Authority comes from evidence and methodology.
+
+---
+
+# 79. No Fake Rarity
+
+Rarity is a historical property, not a marketing weapon.
+
+Current scarcity is an observation.
+Rarity is an inference requiring broader evidence.
+
+Never manufacture rarity to increase perceived value.
+
+---
+
+# 80. Engineering Principles
+
+## 80.1 Boring Core, Powerful Surface
+
+The underlying system should favor:
+- explicit schemas
+- deterministic behavior
+- reproducibility
+- clear migrations
+- observable processes
+- testable rules
+
+The user-facing experience may be sophisticated.
+The truth machinery should be boring enough to trust.
+
+## 80.2 Reversibility
+
+Early decisions should be easy to change.
+
+Use stable identifiers and explicit relationships so presentation can evolve without destroying data.
+
+## 80.3 Deterministic Core
+
+Where deterministic rules are sufficient, use them.
+
+AI should enhance uncertain tasks, not replace deterministic integrity rules merely because AI is fashionable.
+
+## 80.4 Complexity Must Earn Its Place
+
+Every architectural dependency creates future cost.
+
+Prefer boring technology when boring technology is sufficient.
+
+Do not build distributed complexity before scale requires it.
+
+---
+
+# 81. Engineering Rules
 
 Implementation must be:
-
 - readable
 - testable
 - modular
@@ -1617,7 +1893,6 @@ Implementation must be:
 - documented
 
 Avoid:
-
 - hidden state
 - giant managers
 - magic behavior
@@ -1629,21 +1904,14 @@ Avoid:
 
 Every module should have a clear responsibility.
 
-Architecture should support future growth without prematurely building an enormous distributed system.
-
-Prefer boring technology when boring technology is sufficient.
-
-Complexity must earn its place.
-
 ---
 
-# 57. Performance Rules
+# 82. Performance Rules
 
 Fast first.
 Pretty second.
 
 Priorities:
-
 1. search responsiveness
 2. navigation responsiveness
 3. perceived page speed
@@ -1651,35 +1919,44 @@ Priorities:
 5. sensible caching
 6. offline capability where valuable
 
-Slow software damages trust because users interpret waiting as uncertainty or failure.
+Slow software damages trust.
 
 ---
 
-# 58. Privacy Rules
+# 83. Offline and Resilience
+
+Retro gaming knowledge should remain useful when connectivity is imperfect.
+
+Progressively support:
+- cached records
+- saved collections
+- downloaded references
+- offline identification aids
+- local search subsets
+
+Offline capability should target valuable use cases, not exist as a checkbox.
+
+---
+
+# 84. Privacy Rules
 
 User data belongs to the user.
 
 Do not sell private collection data.
-
 Do not expose inventory unnecessarily.
-
-Do not use private collection data to manipulate purchasing behavior.
-
+Do not use private collection data to manipulate purchases.
 Do not collect location unless required.
-
 Do not force cloud storage when local storage is sufficient.
 
 Users should be able to export meaningful personal data.
 
-Privacy is not a legal afterthought.
-It is product design.
+Privacy is product design, not a legal afterthought.
 
 ---
 
-# 59. Security Rules
+# 85. Security Rules
 
 Protect:
-
 - accounts
 - collections
 - private notes
@@ -1689,8 +1966,7 @@ Protect:
 - credentials
 - private contribution drafts
 
-Security architecture should include appropriate:
-
+Security should include appropriate:
 - encryption
 - access control
 - audit trails
@@ -1702,696 +1978,57 @@ Security mechanisms must be proportional to actual risk.
 
 ---
 
-# 60. Monetisation Rules
+# 86. Accessibility
 
-Potential revenue sources:
+Accessibility is quality.
 
-- premium subscription
-- professional tools
-- API access
-- exports
-- accessory sales
-- honest affiliate relationships
-- marketplace services
-
-Core knowledge must not become intentionally crippled merely to create artificial upgrade pressure.
-
-Paid features should provide genuine additional value.
-
-Sponsored or commercial information must never masquerade as neutral factual information.
-
----
-
-# 61. API Philosophy
-
-An API is a future expression of the knowledge graph.
-
-It must not become an uncontrolled dump of proprietary or user-private information.
-
-Public API design should distinguish:
-
-- public canonical knowledge
-- licensed data
-- contributor-owned data
-- user-private data
-- internal moderation data
-
-API consumers must receive stable identifiers and explicit versioning where appropriate.
-
----
-
-# 62. Offline and Resilience Philosophy
-
-Retro gaming knowledge should remain useful when connectivity is imperfect.
-
-The platform should progressively support:
-
-- cached records
-- saved collections
-- downloaded references
-- offline identification aids
-- local search subsets
-
-Offline capability should be designed around valuable use cases rather than implemented as a checkbox.
-
----
-
-# 63. Accessibility
-
-Accessibility is part of quality.
-
-The interface should support:
-
+Support where applicable:
 - readable typography
 - adequate contrast
-- keyboard navigation where applicable
-- screen readers where applicable
+- keyboard navigation
+- screen readers
 - non-color-only information
 - sensible touch targets
 - reduced motion
 - clear error states
 
-A preservation platform that excludes users unnecessarily contradicts its own mission.
+A preservation platform should not exclude users unnecessarily.
 
 ---
 
-# 64. Internationalization
+# 87. Internationalization
 
 Retro gaming is global.
 
 The data model must not assume one country, currency, language, date format, rating system, or marketplace.
 
-Internationalization must exist at the data level, not merely the UI level.
+Internationalization exists at data level, not only UI level.
 
 Titles may vary by region and language.
-
 Currencies must remain explicit.
-
 Dates must remain unambiguous.
 
 ---
 
-# 65. Legal and Ethical Boundaries
-
-The platform must respect applicable:
-
-- copyright
-- trademark
-- privacy
-- licensing
-- archival access restrictions
-- marketplace terms
-
-Preservation does not automatically grant redistribution rights.
-
-The product should preserve metadata, provenance, identification, and historical knowledge even when an underlying copyrighted asset cannot be redistributed.
-
-The platform must not encourage piracy merely because retro content is difficult to obtain.
-
----
-
-# 66. Roadmap Philosophy
-
-Build in layers.
-
-## Foundation
-
-- ontology
-- source model
-- identity model
-- search
-- core records
-- relationships
-
-## Intelligence
-
-- collection
-- identification
-- pricing
-- compatibility
-- repair
-- benchmarks
-
-## Preservation
-
-- archival metadata
-- revision tracking
-- historical state
-- evidence management
-
-## Ecosystem
-
-- community contribution
-- API
-- marketplace tools
-- physical products
-- integrations
-
-Do not build layers out of order merely because later features are more exciting.
-
----
-
-# 67. Feature Prioritization
-
-Priority should consider:
-
-- user value
-- knowledge value
-- trust value
-- strategic differentiation
-- data compounding
-- implementation complexity
-- maintenance cost
-- legal risk
-- privacy risk
-- opportunity cost
-
-A flashy feature with low compounding value should usually lose to an unglamorous feature that strengthens the knowledge graph.
-
----
-
-# 68. Product Development Rule
-
-Do not ask:
-
-"What feature should we add next?"
-
-Ask:
-
-"What important problem remains unsolved?"
-
-Then ask:
-
-"What data, relationship, workflow, or capability solves it?"
-
-Only then decide whether that solution needs a feature.
-
----
-
-# 69. Anti-Feature Philosophy
-
-Removing features is product development.
-
-If a feature:
-
-- adds noise
-- duplicates another workflow
-- weakens trust
-- creates maintenance burden
-- encourages bad data
-- distracts from core purpose
-- exists only because competitors have it
-
-it should be considered for removal.
-
-Feature count is not product quality.
-
----
-
-# 70. Default User Journey
-
-A user may arrive with almost no knowledge.
-
-They search or identify something.
-
-RetroVault establishes identity.
-
-It shows the relevant context.
-
-It exposes region and version.
-
-It provides compatibility and value where available.
-
-It shows evidence.
-
-It reveals related entities.
-
-The user may then save the object, compare it, investigate it, repair it, buy it, preserve it, or contribute knowledge.
-
-The core loop is:
-
-**Question → Identity → Context → Evidence → Relationship → Action → Knowledge improvement**
-
----
-
-# 71. Knowledge Compounding Loop
-
-The product becomes stronger when every useful interaction improves future answers.
-
-Example:
-
-User identifies cartridge.
-
-Identification creates a collection record.
-
-User photographs PCB.
-
-PCB evidence improves revision knowledge.
-
-Revision knowledge improves future identification.
-
-Future identification improves collection accuracy.
-
-Collection data reveals missing variants.
-
-Missing variants trigger preservation work.
-
-Preservation work creates new sources.
-
-Sources strengthen the graph.
-
-The loop compounds.
-
-This compounding behavior is a core strategic objective.
-
----
-
-# 72. The Graph Must Explain Itself
-
-Users should never need to understand graph theory.
-
-But the product should make relationships obvious.
-
-A user looking at a game should naturally discover:
-
-- releases
-- regions
-- hardware
-- versions
-- manuals
-- developers
-- publishers
-- patches
-- compatibility
-- prices
-- related games
-
-A user looking at hardware should naturally discover:
-
-- revisions
-- firmware
-- accessories
-- controllers
-- games
-- repairs
-- benchmarks
-- known faults
-
-Discovery should feel natural rather than database-like.
-
----
-
-# 73. Evidence Presentation
-
-Evidence should be close to the claim it supports.
-
-Do not bury important evidence behind multiple unrelated screens.
-
-The interface should distinguish:
-
-**Verified fact**
-
-**Observed measurement**
-
-**Community report**
-
-**Inference**
-
-**Opinion**
-
-These are different knowledge types.
-
----
-
-# 74. Content Quality Rules
-
-Every piece of structured knowledge should answer:
-
-What is this?
-
-Where did it come from?
-
-How certain are we?
-
-When was it true?
-
-What does it connect to?
-
-Can someone challenge it?
-
-If these questions cannot be answered for important information, the record is incomplete.
-
----
-
-# 75. Naming Rules
-
-Canonical names must be:
-
-- stable
-- unambiguous
-- human-readable
-- source-aware
-- region-aware where necessary
-
-Do not use marketing language as canonical identity.
-
-Do not allow marketplace naming conventions to define canonical entities.
-
-Aliases should preserve useful real-world terminology.
-
----
-
-# 76. Status Model
-
-Entities and claims need explicit status.
-
-Potential statuses:
-
-- draft
-- incomplete
-- active
-- verified
-- disputed
-- deprecated
-- archived
-- rejected
-- superseded
-
-Status describes lifecycle.
-Confidence describes evidence.
-These must remain separate.
-
----
-
-# 77. No Silent Mutation
-
-Important data must never change without traceability.
-
-When a canonical value changes, the system should retain:
-
-- previous value
-- new value
-- reason
-- contributor
-- timestamp
-- supporting evidence
-
-A clean database with no history can be less trustworthy than a messy database with a complete audit trail.
-
----
-
-# 78. No Orphan Knowledge
-
-Useful records should connect to the graph.
-
-An isolated photo is less useful than a photo linked to:
-
-hardware → revision → region → source → claim
-
-An isolated price is less useful than:
-
-game release → region → condition → marketplace → price observation
-
-Orphan records may exist temporarily during ingestion.
-
-They should not become the permanent architecture.
-
----
-
-# 79. Comparison Philosophy
-
-RetroVault should be excellent at comparisons.
-
-Comparisons should normalize relevant dimensions without hiding meaningful differences.
-
-Compare:
-
-- hardware
-- revisions
-- games
-- regional releases
-- accessories
-- prices
-- benchmarks
-- compatibility
-
-Never reduce a multidimensional comparison to one arbitrary score unless the methodology is explicit.
-
----
-
-# 80. Recommendation Philosophy
-
-Recommendations must be explainable.
-
-If RetroVault recommends an item, it should be possible to understand why.
-
-Possible factors:
-
-- compatibility
-- price
-- condition
-- region
-- collection fit
-- user preferences
-- benchmark performance
-- historical importance
-
-Never optimize recommendations solely for commercial revenue.
-
----
-
-# 81. No Fake Authority
-
-The platform must never use visual design to imply certainty that the data does not possess.
-
-Bad examples:
-
-- arbitrary 98% confidence badges
-- unsupported expert labels
-- fake certification symbols
-- unexplained "best" rankings
-- invented rarity scores
-
-Authority must come from evidence and methodology.
-
----
-
-# 82. No Fake Rarity
-
-Rarity is a complex historical property.
-
-Do not infer rarity solely from current marketplace scarcity.
-
-Rarity may consider:
-
-- production
-- distribution
-- survival
-- regional availability
-- documented quantities
-- current observations
-
-When evidence is weak, describe scarcity observations rather than declaring absolute rarity.
-
----
-
-# 83. No Single Score For Everything
-
-The platform should resist universal scoring systems.
-
-A game does not need one number for:
-
-- quality
-- rarity
-- value
-- preservation importance
-- historical importance
-
-A console does not need one number for:
-
-- performance
-- desirability
-- reliability
-- collector value
-
-Different dimensions should remain distinct unless there is a defensible reason to combine them.
-
----
-
-# 84. Engineering Principle: Boring Core, Powerful Surface
-
-The underlying system should favor:
-
-- explicit schemas
-- deterministic behavior
-- reproducibility
-- clear migrations
-- observable processes
-- testable rules
-
-The user-facing experience can be sophisticated.
-
-The underlying truth machinery should be boring enough to trust.
-
----
-
-# 85. Engineering Principle: Reversibility
-
-Early decisions should be easy to change.
-
-Use stable identifiers and explicit relationships so presentation can evolve without destroying data.
-
-Avoid embedding business logic into irreversible data transformations.
-
-Prefer migrations with rollback strategies.
-
----
-
-# 86. Engineering Principle: Deterministic Core
-
-Where deterministic rules are sufficient, use them.
-
-AI should enhance uncertain tasks.
-
-AI should not replace deterministic identity, normalization, validation, or integrity rules merely because AI is fashionable.
-
----
-
-# 87. Engineering Principle: Observable Pipelines
-
-Data ingestion should be traceable.
-
-A pipeline should make it possible to answer:
-
-What entered the system?
-
-What transformation occurred?
-
-What was rejected?
-
-What was inferred?
-
-What was verified?
-
-What was published?
-
-Silent ingestion is unacceptable for important data.
-
----
-
-# 88. Source Ingestion Philosophy
-
-External data is raw material, not truth.
-
-Imported data must retain source identity and provenance.
-
-Different sources may disagree.
-
-The system should preserve source-level information rather than flattening everything into one anonymous record.
-
-Ingestion must be designed for reconciliation.
-
----
-
-# 89. External Source Trust
-
-A source may be excellent for one domain and weak for another.
-
-Trust must be contextual.
-
-For example:
-
-A manufacturer may be authoritative for official specifications.
-
-A repair specialist may be more authoritative for failure modes.
-
-A collector database may be more useful for obscure packaging variants.
-
-The source hierarchy is guidance, not a simplistic global ranking.
-
----
-
-# 90. Data Import Rules
-
-Imported data must not automatically become canonical data.
-
-Import stages should conceptually separate:
-
-1. acquisition
-2. parsing
-3. normalization
-4. matching
-5. validation
-6. reconciliation
-7. verification
-8. publication
-
-This separation prevents low-quality source data from silently contaminating the canonical graph.
-
----
-
-# 91. Future-Proofing
-
-The product should survive changes in:
-
-- devices
-- operating systems
-- marketplaces
-- AI models
-- APIs
-- storage technologies
-- web frameworks
-- interface trends
-- commercial partners
-
-The knowledge model must outlive the implementation.
-
----
-
-# 92. Long-Term Preservation Horizon
-
-Design for decades, not quarters.
-
-A record created today may still be useful in 2045.
-
-Therefore:
-
-- identifiers should remain stable
-- provenance should survive migrations
-- dates should remain unambiguous
-- historical state should remain accessible
-- exports should be possible
-- formats should be documented
-- dependencies should not be assumed permanent
-
----
-
-# 93. Public Knowledge vs Private Knowledge
-
-The platform must clearly separate:
-
-Public canonical knowledge.
-
-Contributor-submitted knowledge.
-
-Private user collection data.
-
-Private notes.
-
-Commercial or licensed data.
-
-Internal moderation data.
+# 88. Public vs Private Knowledge
+
+Clearly separate:
+- public canonical knowledge
+- contributor submissions
+- private collection data
+- private notes
+- commercial or licensed data
+- internal moderation data
 
 These categories have different ownership, access, retention, and export rules.
 
 ---
 
-# 94. User Ownership
+# 89. User Ownership
 
 Users must not become trapped by the platform.
 
-Where practical, users should be able to export:
-
+Where practical, users can export:
 - collections
 - notes
 - photographs
@@ -2403,21 +2040,60 @@ The platform earns loyalty by being useful, not by making exit painful.
 
 ---
 
-# 95. Monetization Boundary
+# 90. API Philosophy
 
-Money may influence product scope.
+An API is an expression of the knowledge graph.
 
-Money may not influence factual truth.
+Public API design must distinguish:
+- public canonical knowledge
+- licensed data
+- contributor-owned data
+- user-private data
+- internal moderation data
 
-A paid listing must not rank above a better factual answer merely because it pays.
-
-Affiliate relationships must not distort price presentation.
-
-Sponsored content must be clearly identified.
+API consumers need stable identifiers and explicit versioning where appropriate.
 
 ---
 
-# 96. Brand Philosophy
+# 91. Legal and Ethical Boundaries
+
+The platform must respect applicable:
+- copyright
+- trademark
+- privacy
+- licensing
+- archival access restrictions
+- marketplace terms
+
+Preservation does not automatically grant redistribution rights.
+
+The platform must not encourage piracy merely because retro content is difficult to obtain.
+
+Metadata, provenance, identification, and historical knowledge should remain useful even when an underlying copyrighted asset cannot be redistributed.
+
+---
+
+# 92. Monetisation Rules
+
+Potential revenue sources:
+- premium subscription
+- professional tools
+- API access
+- exports
+- accessory sales
+- honest affiliate relationships
+- marketplace services
+
+Core knowledge must not be intentionally crippled merely to create artificial upgrade pressure.
+
+Money may influence product scope.
+Money may not influence factual truth.
+
+Sponsored information must be clearly identified.
+
+---
+
+# 93. Brand Philosophy
 
 RetroVault should feel like a serious institution built for people who happen to love old games.
 
@@ -2426,7 +2102,6 @@ Not a nostalgia meme page.
 Not an arcade-themed dashboard.
 
 The brand should communicate:
-
 - trust
 - permanence
 - intelligence
@@ -2439,10 +2114,9 @@ The brand provides confidence.
 
 ---
 
-# 97. Product Voice
+# 94. Product Voice
 
 Copy should be:
-
 - concise
 - precise
 - confident when evidence supports confidence
@@ -2451,7 +2125,6 @@ Copy should be:
 - free of unnecessary hype
 
 Avoid:
-
 - clickbait
 - fake urgency
 - exaggerated claims
@@ -2460,13 +2133,11 @@ Avoid:
 
 ---
 
-# 98. Information Density
+# 95. Information Density
 
 Retro gaming users often want technical detail.
 
-The product should not dumb down information merely to look simple.
-
-Instead:
+Do not dumb down information merely to look simple.
 
 Simple surface.
 Deep structure.
@@ -2485,54 +2156,179 @@ to:
 
 to:
 
-"Which source proves it?"
+"Which evidence proves it?"
 
 without leaving the product.
 
 ---
 
-# 99. The Product Should Reward Curiosity
+# 96. Curiosity
 
 Discovery is valuable.
 
-A user who finds one game should naturally be able to discover:
-
-its developer,
-its publisher,
-its regional releases,
-its hardware,
-its sequels,
-its contemporaries,
-its manual,
-its patches,
-its preservation history.
+A user who finds one game should naturally discover its developer, publisher, regional releases, hardware, sequels, contemporaries, manual, patches, and preservation history.
 
 This should feel like exploration rather than endless scrolling.
 
 ---
 
-# 100. The Product Should Reward Precision
+# 97. Precision
 
-Users who care about exact revisions, variants, regions, or hardware differences should find increasing depth rather than hitting a simplified ceiling.
+Users who care about exact revisions, variants, regions, or hardware differences should find increasing depth rather than a simplified ceiling.
 
 Precision is not a niche failure.
-
-Precision is part of the product's identity.
+Precision is part of the product identity.
 
 ---
 
-# 101. What Success Looks Like
+# 98. Default User Journey
+
+Question → Identity → Context → Evidence → Relationship → Action → Knowledge improvement
+
+A user may arrive with almost no knowledge.
+
+They search or identify something.
+RetroVault establishes identity.
+It shows relevant context.
+It exposes region and version.
+It provides compatibility and value where available.
+It shows evidence.
+It reveals related entities.
+
+The user may then save, compare, investigate, repair, buy, preserve, or contribute.
+
+---
+
+# 99. Knowledge Compounding Loop
+
+User identifies cartridge.
+
+Identification creates collection knowledge.
+
+User photographs PCB.
+
+PCB evidence improves revision knowledge.
+
+Revision knowledge improves future identification.
+
+Future identification improves collection accuracy.
+
+Collection data reveals missing variants.
+
+Missing variants trigger preservation work.
+
+Preservation work creates new evidence.
+
+Evidence strengthens the graph.
+
+The loop compounds.
+
+This compounding behavior is a core strategic objective.
+
+---
+
+# 100. Roadmap Philosophy
+
+Build in layers.
+
+## Foundation
+- ontology
+- source model
+- identity model
+- search
+- core records
+- relationships
+
+## Intelligence
+- collection
+- identification
+- pricing
+- compatibility
+- repair
+- benchmarks
+
+## Preservation
+- archival metadata
+- revision tracking
+- historical state
+- evidence management
+
+## Ecosystem
+- community contribution
+- API
+- marketplace tools
+- physical products
+- integrations
+
+Do not build layers out of order merely because later features are more exciting.
+
+---
+
+# 101. Feature Prioritization
+
+Prioritize using:
+- user value
+- knowledge value
+- trust value
+- strategic differentiation
+- data compounding
+- implementation complexity
+- maintenance cost
+- legal risk
+- privacy risk
+- opportunity cost
+
+A flashy feature with low compounding value should usually lose to an unglamorous feature that strengthens the graph.
+
+---
+
+# 102. Product Development Rule
+
+Do not ask:
+
+"What feature should we add next?"
+
+Ask:
+
+"What important problem remains unsolved?"
+
+Then ask:
+
+"What data, relationship, workflow, or capability solves it?"
+
+Only then decide whether that solution needs a feature.
+
+---
+
+# 103. Anti-Feature Philosophy
+
+Removing features is product development.
+
+If a feature:
+- adds noise
+- duplicates another workflow
+- weakens trust
+- creates maintenance burden
+- encourages bad data
+- distracts from core purpose
+- exists only because competitors have it
+
+it should be considered for removal.
+
+Feature count is not product quality.
+
+---
+
+# 104. Success Criteria
 
 Success is not measured only by:
-
 - downloads
 - page views
 - subscriptions
 - listings
 - daily active users
 
-Important success indicators include:
-
+Important indicators include:
 - trusted records created
 - claims verified
 - sources preserved
@@ -2549,12 +2345,11 @@ They do not define product quality.
 
 ---
 
-# 102. What Failure Looks Like
+# 105. Failure Criteria
 
 Failure includes:
-
 - large database with weak provenance
-- AI-generated misinformation at scale
+- AI misinformation at scale
 - users unable to distinguish fact from opinion
 - shallow records for thousands of objects
 - broken regional distinctions
@@ -2568,25 +2363,9 @@ A product can be popular and still fail these tests.
 
 ---
 
-# 103. Final Decision Rule
-
-When uncertain, choose the option that best preserves:
-
-1. truth
-2. provenance
-3. relationships
-4. reversibility
-5. user trust
-6. long-term usefulness
-
-Short-term convenience comes after those.
-
----
-
-# 104. Never Do This
+# 106. Never Do This
 
 Never:
-
 - invent facts
 - invent prices
 - fabricate sources
@@ -2608,9 +2387,569 @@ Never:
 
 ---
 
-# 105. Final Rule
+# 107. Final Decision Rule
 
-Every important decision must ultimately answer:
+When uncertain, choose the option that best preserves:
+
+1. truth
+2. provenance
+3. relationships
+4. reversibility
+5. user trust
+6. long-term usefulness
+
+Short-term convenience comes after those.
+
+---
+
+# 108. Knowledge Taxonomy
+
+RetroVault must distinguish several kinds of knowledge.
+
+## Identity
+What something is.
+
+## Attribute
+A property of an entity.
+
+## Relationship
+How two entities connect.
+
+## Observation
+What someone directly observed or measured.
+
+## Claim
+An assertion about an entity or relationship.
+
+## Evidence
+Material supporting a claim.
+
+## Interpretation
+Meaning inferred from evidence.
+
+## Opinion
+A subjective judgment.
+
+## Historical Record
+Information describing a state or event at a particular time.
+
+## Derived Knowledge
+Information calculated or inferred from existing records.
+
+These categories must not be silently mixed.
+
+---
+
+# 109. Temporal Truth
+
+Many retro-gaming facts are true only within a time range.
+
+A console can have one specification at launch and another after a revision.
+
+A firmware feature can exist only after an update.
+
+A price can be accurate for one month and useless later.
+
+A compatibility state can change after firmware modification.
+
+Therefore important claims should support temporal scope where relevant:
+- valid from
+- valid until
+- observed at
+- superseded by
+
+"Current" is not a sufficient historical model.
+
+---
+
+# 110. Scope Rules
+
+Claims need scope.
+
+A statement may apply to:
+- all units
+- one revision
+- one region
+- one firmware version
+- one software version
+- one accessory combination
+- one production run
+- one observed specimen
+
+Never generalize a specimen-level observation into a universal fact without evidence.
+
+---
+
+# 111. Negative Knowledge
+
+The absence of something can be useful knowledge.
+
+Examples:
+- accessory does not work with revision X
+- game does not support feature Y
+- cartridge does not contain expected component
+- claimed revision was never documented
+
+Negative claims require care.
+
+"Not observed" is not automatically "does not exist."
+
+The system must distinguish absence of evidence from evidence of absence.
+
+---
+
+# 112. Provenance Preservation
+
+Provenance must survive:
+- imports
+- edits
+- migrations
+- merges
+- exports
+- API transformations
+- future schema changes
+
+A record that loses its origin during transformation is degraded data.
+
+Provenance is part of the data, not metadata that can be discarded later.
+
+---
+
+# 113. Source Independence
+
+Ten websites repeating the same undocumented statement are not necessarily ten independent sources.
+
+The platform should distinguish:
+- independent evidence
+- copied information
+- derivative reporting
+- circular citation
+
+Independent corroboration is stronger than repetition.
+
+---
+
+# 114. Conflict Resolution
+
+When credible sources disagree:
+
+1. preserve both claims
+2. identify scope differences
+3. compare evidence quality
+4. check temporal context
+5. check regional context
+6. check revision context
+7. identify possible source copying
+8. seek primary evidence
+9. publish uncertainty if unresolved
+
+Do not manufacture consensus.
+
+---
+
+# 115. Editorial Neutrality
+
+RetroVault may explain evidence without pretending every interpretation is equally plausible.
+
+Neutrality does not mean false equivalence.
+
+A claim supported by direct physical evidence may be presented as stronger than an unsupported anecdote.
+
+The distinction must be explained rather than hidden.
+
+---
+
+# 116. Historical Importance
+
+Historical importance is distinct from popularity and market value.
+
+An obscure accessory can be historically important.
+
+A common game can be historically important.
+
+A commercially worthless document can preserve critical knowledge.
+
+The platform should not allow market price to become a proxy for historical significance.
+
+---
+
+# 117. Preservation Priority
+
+When preservation resources are limited, priority should consider:
+- uniqueness
+- risk of loss
+- historical significance
+- scarcity of documentation
+- dependency relationships
+- physical fragility
+- community value
+- reversibility of loss
+
+The rarest item is not automatically the most urgent item.
+
+A common object with disappearing repair knowledge may deserve higher priority.
+
+---
+
+# 118. Canonical vs Personal Truth
+
+Canonical knowledge describes the object or historical record.
+
+Personal data describes the user's specific object, experience, observation, or ownership.
+
+A user's cartridge may have a unique scratch, repaired trace, or provenance.
+
+That does not change the canonical identity of the cartridge.
+
+Personal observations may nevertheless become evidence for broader claims when properly submitted and verified.
+
+---
+
+# 119. User Observation Pipeline
+
+A user observation should conceptually follow:
+
+Observation → Submission → Provenance → Review → Claim → Canonical relationship
+
+The original observation must remain attributable even after it becomes part of canonical knowledge.
+
+This preserves credit and accountability.
+
+---
+
+# 120. Contributor Reputation
+
+Contributor reputation should be evidence-based.
+
+Useful reputation signals may include:
+- accepted corrections
+- evidence quality
+- specialist consistency
+- reproducibility
+- accurate historical research
+- responsible disagreement
+
+Reputation must not become permanent authority.
+
+Experts can be wrong.
+New contributors can provide decisive evidence.
+
+---
+
+# 121. Governance
+
+As the project grows, governance must protect the constitution from both founder bias and community chaos.
+
+Important governance mechanisms should include:
+- documented decision standards
+- audit history
+- conflict handling
+- contributor roles
+- review thresholds
+- appeal mechanisms
+- constitutional amendments
+
+Governance exists to protect knowledge quality.
+
+---
+
+# 122. Constitutional Amendment
+
+Constitution changes must be deliberate.
+
+A substantive amendment should identify:
+- what changed
+- why it changed
+- which earlier assumption was wrong or incomplete
+- what downstream systems may be affected
+
+Version changes should reflect material changes in product philosophy or architecture.
+
+Do not preserve obsolete wording merely because it is old.
+
+Preserve rationale when it explains important historical decisions.
+
+---
+
+# 123. Architecture Boundary
+
+The constitution defines desired behavior and constraints.
+
+It should not prematurely dictate implementation details that may become obsolete.
+
+Specific technologies belong in engineering specifications unless they are strategically important.
+
+The constitution should define:
+- invariants
+- interfaces
+- responsibilities
+- data guarantees
+- trust guarantees
+
+not every framework or library.
+
+---
+
+# 124. Data Invariants
+
+The following should eventually become enforceable system invariants:
+
+No canonical entity without stable identity.
+
+No important claim without provenance.
+
+No destructive canonical merge without traceability.
+
+No ambiguous currency in price data.
+
+No ambiguous unit in measurement data.
+
+No regional fact silently generalized globally.
+
+No AI inference silently promoted to verified fact.
+
+No private collection record exposed as public by default.
+
+No historical correction without retained change history.
+
+---
+
+# 125. Product Surface vs Knowledge Core
+
+The knowledge core should not be redesigned merely because a screen needs simplification.
+
+The interface may present a subset of complexity.
+
+The underlying graph should retain complexity when that complexity represents reality.
+
+Simplification belongs at the presentation layer unless the underlying model is genuinely wrong.
+
+---
+
+# 126. Search Is Not the Database
+
+Search indexes are derived systems.
+
+Search can be rebuilt.
+Canonical data cannot be casually reconstructed after provenance is lost.
+
+Therefore:
+
+Canonical graph → derived indexes → user experience
+
+Never reverse this dependency.
+
+---
+
+# 127. Derived Data
+
+Derived values should remain distinguishable from source values.
+
+Examples:
+- estimated value
+- inferred rarity
+- recommendation ranking
+- similarity score
+- identification probability
+- aggregated benchmark
+
+Derived data should retain enough information to explain how it was produced.
+
+---
+
+# 128. Reproducibility
+
+Important derived outputs should be reproducible from known inputs and methodology where practical.
+
+If a recommendation or statistic cannot be explained after the underlying data changes, trust decreases.
+
+Reproducibility matters especially for:
+- benchmarks
+- price summaries
+- identification
+- rankings
+- compatibility inference
+
+---
+
+# 129. No Black-Box Canonicalization
+
+The platform must not silently transform messy real-world data into clean-looking canonical records without preserving the transformation.
+
+Normalization is useful.
+
+Invisible normalization is dangerous.
+
+Every meaningful transformation should be attributable to a rule, source, or human decision.
+
+---
+
+# 130. Long-Term Preservation Horizon
+
+Design for decades, not quarters.
+
+A record created today may still be useful in 2045.
+
+Therefore:
+- identifiers should remain stable
+- provenance should survive migrations
+- dates should remain unambiguous
+- historical state should remain accessible
+- exports should be possible
+- formats should be documented
+- dependencies should not be assumed permanent
+
+The implementation may change.
+The knowledge should endure.
+
+---
+
+# 131. Future-Proofing
+
+The product should survive changes in:
+- devices
+- operating systems
+- marketplaces
+- AI models
+- APIs
+- storage technologies
+- web frameworks
+- interface trends
+- commercial partners
+
+The knowledge model must outlive the implementation.
+
+---
+
+# 132. Product Expansion Test
+
+Before entering a new product category, ask:
+
+Does it strengthen the knowledge graph?
+
+Does it create useful new evidence?
+
+Does it create useful new relationships?
+
+Does it serve an existing user need?
+
+Does it preserve trust?
+
+Can it be maintained without weakening the core?
+
+If not, expansion is rejected.
+
+---
+
+# 133. Ecosystem Strategy
+
+RetroVault may eventually span:
+- web
+- mobile
+- desktop
+- physical products
+- APIs
+- integrations
+- community tools
+- preservation tooling
+
+These are surfaces of one knowledge system.
+
+They must not become separate products with conflicting identities or duplicate truths.
+
+---
+
+# 134. The Single Source of Truth Rule
+
+There should be one canonical representation of an entity.
+
+Views may differ.
+Exports may differ.
+Caches may differ.
+Search indexes may differ.
+
+Canonical identity must not.
+
+Duplication at the presentation layer is acceptable.
+Duplication of truth is dangerous.
+
+---
+
+# 135. Default Against Feature Creep
+
+When a proposed feature sounds exciting, ask what permanent knowledge it creates.
+
+If the answer is "none," the feature carries a higher burden of proof.
+
+RetroVault is not obligated to contain every useful retro-gaming tool.
+
+It is obligated to remain coherent.
+
+---
+
+# 136. Default Against Gamification
+
+Gamification is not inherently bad.
+
+But retro knowledge should not require addiction mechanics to remain useful.
+
+Avoid:
+- streaks for research
+- points for low-value submissions
+- leaderboards for contribution volume
+- artificial scarcity timers
+- notification pressure
+
+If motivation is needed, reward meaningful preservation and discovery rather than compulsive activity.
+
+---
+
+# 137. Default Against AI-First Product Design
+
+Do not invent problems merely because AI can solve them.
+
+AI is valuable when it reduces friction in:
+- discovery
+- identification
+- extraction
+- translation
+- reconciliation
+- summarization
+- research
+
+The underlying knowledge must remain useful without pretending AI is the product.
+
+---
+
+# 138. Default Against Social-First Design
+
+Community exists to improve knowledge.
+
+Social interaction is not the product's primary objective.
+
+Discussion should attach to useful entities, claims, evidence, observations, and corrections.
+
+The platform should avoid becoming a generic place to talk about retro games without producing durable knowledge.
+
+---
+
+# 139. Default Against Marketplace-First Design
+
+Commerce may be useful.
+
+Commerce must not determine the ontology.
+
+A game is not valuable because it can be sold.
+A hardware revision is not important because it is expensive.
+A rare manual is not merely a marketplace listing.
+
+Commercial objects are part of a larger historical system.
+
+---
+
+# 140. The Permanent Test
+
+Every major decision must ultimately answer:
 
 **Does this make retro gaming knowledge more trustworthy, more connected, more useful, or more permanent?**
 
@@ -2618,7 +2957,7 @@ If not, it does not belong in RetroVault.
 
 ---
 
-# 106. Constitution Growth Rule
+# 141. Constitution Growth Rule
 
 This document is intentionally incomplete.
 
@@ -2638,16 +2977,14 @@ When new knowledge contradicts an earlier assumption:
 6. continue from the improved model
 
 The objective is not to reach a large document.
-
 The objective is to reach a coherent one.
 
 The document may eventually exceed 100,000 words.
-
 Length is justified only when it reduces ambiguity.
 
 ---
 
-# 107. Working Standard
+# 142. Working Standard
 
 Every future product decision should be treated as if it will still matter ten years from now.
 
@@ -2658,5 +2995,4 @@ Every preservation decision should be treated as if the original source may disa
 Every interface decision should be treated as a temporary window onto a permanent body of knowledge.
 
 The platform may change.
-
 The knowledge should endure.
