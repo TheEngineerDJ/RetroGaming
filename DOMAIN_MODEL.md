@@ -1,0 +1,856 @@
+# RetroVault Canonical Domain Model
+
+## Status
+
+Derived from `Constitution.md`.
+
+This document defines the canonical conceptual model used by RetroVault. It is intentionally implementation-neutral. Database tables, Kotlin classes, API payloads, and UI models derive from these concepts.
+
+---
+
+# 1. Fundamental Rule
+
+Do not model retro gaming as a list of games.
+
+Model entities, observations, claims, evidence, relationships, and context.
+
+A name is not identity.
+A file is not a game.
+A release is not a dump.
+A console is not a hardware revision.
+A price is not value.
+A source is not proof.
+A prediction is not verification.
+
+---
+
+# 2. Entity Families
+
+Canonical entities fall into these families:
+
+1. Software
+2. Hardware
+3. Media
+4. People and organizations
+5. Publications and documentation
+6. Physical objects
+7. Digital artifacts
+8. Collection objects
+9. Sources and evidence
+10. Measurements and observations
+11. Events and historical states
+
+---
+
+# 3. Software Model
+
+## 3.1 Game Concept
+
+Abstract work independent of a particular release.
+
+Example:
+
+`Super Mario Bros.` as a work.
+
+The concept may have multiple releases, ports, revisions, translations, remakes, and regional variants.
+
+## 3.2 Release
+
+A commercially or historically meaningful distribution of a game concept.
+
+A release may have:
+- platform
+- region
+- language
+- publisher
+- developer
+- release date
+- media
+- title
+- product code
+- rating
+- packaging
+
+## 3.3 Version
+
+A software state within a release family where content or behavior materially differs.
+
+## 3.4 Build
+
+A specific compiled software artifact or development state.
+
+Builds matter when preservation, compatibility, research, or identification requires the distinction.
+
+## 3.5 Port
+
+A release derived for another hardware/software platform.
+
+## 3.6 Remake
+
+A substantially recreated implementation of an existing game work.
+
+## 3.7 Remaster
+
+A materially enhanced presentation or technical revision retaining substantial identity with an earlier work.
+
+## 3.8 Patch
+
+A modification applied to another software artifact.
+
+## 3.9 Translation
+
+A language modification of an existing software artifact.
+
+## 3.10 Hack / Modification
+
+A modification changing behavior, content, presentation, or other characteristics.
+
+## 3.11 Homebrew
+
+Software developed outside the original commercial development context.
+
+## 3.12 Prototype
+
+A non-final development artifact with preservation significance.
+
+## 3.13 Demo
+
+A software artifact intended as a demonstration rather than the complete commercial product.
+
+---
+
+# 4. Digital Artifact Model
+
+A digital artifact is a concrete file or set of files observed by the system.
+
+Examples:
+- ROM image
+- disc image
+- tape image
+- floppy image
+- archive
+- patch file
+- save file
+- firmware image
+- executable
+- BIOS image
+
+Digital artifact identity must be separate from software identity.
+
+One software release can have many dumps.
+One dump can be distributed under many filenames.
+One archive can contain multiple digital artifacts.
+
+---
+
+# 5. Dump Model
+
+A dump represents a preservation capture of a physical or digital source.
+
+A dump may have:
+- source media
+- dump method
+- dumper/tool
+- date
+- operator
+- verification status
+- checksums
+- known database identifiers
+- provenance
+
+Dump identity must not be inferred solely from filename.
+
+---
+
+# 6. Hash Model
+
+Hashes are evidence about bytes.
+
+Supported initial algorithms:
+- CRC32
+- MD5
+- SHA-1
+
+Future algorithms may be added.
+
+A hash record should preserve:
+- algorithm
+- value
+- byte scope
+- artifact/container context
+- calculation method/version
+- timestamp where relevant
+
+A CRC32 collision is not an identity proof.
+
+A hash must always be scoped to what was hashed.
+
+---
+
+# 7. Archive Model
+
+Archives are containers, not automatically software identities.
+
+A ZIP may contain:
+- one ROM
+- multiple ROMs
+- manuals
+- metadata
+- patches
+- unrelated files
+
+The system must distinguish:
+
+`Archive → contains → Artifact`
+
+from:
+
+`Artifact → represents → Release`
+
+Hashing an archive and hashing its contained ROM are different observations.
+
+---
+
+# 8. Hardware Model
+
+## 8.1 Hardware Family
+
+Conceptual product family.
+
+Example:
+
+Game Boy family.
+
+## 8.2 Hardware Model
+
+Specific commercially identifiable model.
+
+## 8.3 Hardware Revision
+
+Meaningful manufacturing or engineering revision.
+
+Revision distinctions may include:
+- PCB
+- CPU
+- memory
+- display
+- power system
+- connectors
+- board layout
+- component substitutions
+- firmware
+- compatibility
+
+## 8.4 Development Hardware
+
+Development kits and test hardware must be represented separately from retail hardware.
+
+---
+
+# 9. Media Model
+
+Media represents physical distribution/storage technology.
+
+Examples:
+- cartridge
+- optical disc
+- floppy
+- cassette
+- card
+- proprietary media
+
+Media should connect to:
+- release
+- region
+- physical object
+- PCB
+- digital artifact
+- save technology
+- packaging
+
+---
+
+# 10. PCB Model
+
+A PCB is a physical board, not merely a cartridge.
+
+It may have:
+- board identifier
+- revision
+- components
+- ROM chip
+- RAM
+- mapper
+- save hardware
+- region evidence
+- manufacturing markings
+- photographs
+
+Multiple physical objects may share the same PCB design.
+
+A PCB can therefore be an entity distinct from an individual cartridge.
+
+---
+
+# 11. Firmware Model
+
+Firmware is software associated with hardware operation.
+
+Firmware requires:
+- target hardware
+- version
+- region where relevant
+- release/build identity
+- checksum where useful
+- update relationship
+- compatibility scope
+
+Firmware versions must not be merged merely because user-visible behavior appears identical.
+
+---
+
+# 12. Peripheral Model
+
+Peripherals include:
+- controllers
+- adapters
+- memory cards
+- link cables
+- guns
+- microphones
+- cameras
+- printers
+- modems
+- expansion hardware
+- specialty accessories
+
+Each may have compatibility relationships with hardware, software, regions, and revisions.
+
+---
+
+# 13. Physical Object Model
+
+A physical object is an individual observable instance.
+
+Examples:
+- one console owned by a user
+- one cartridge
+- one boxed copy
+- one controller
+- one PCB
+
+Physical objects may share a canonical identity while differing in condition, modifications, provenance, or completeness.
+
+---
+
+# 14. Collection Object Model
+
+A collection object connects a user to an object or digital artifact.
+
+It may record:
+- ownership state
+- acquisition date
+- acquisition source
+- acquisition price
+- storage location
+- condition
+- completeness
+- notes
+- photographs
+- provenance
+- current status
+
+Collection state belongs to the user/context.
+
+Canonical identity belongs to the knowledge model.
+
+---
+
+# 15. Person and Organization Model
+
+Represent:
+- developers
+- programmers
+- artists
+- composers
+- publishers
+- manufacturers
+- distributors
+- licensors
+- preservation organizations
+- community contributors
+
+Roles must be relationship-scoped.
+
+A person may be developer on one project and producer on another.
+
+Do not encode roles permanently into person identity.
+
+---
+
+# 16. Publication Model
+
+Publications include:
+- manuals
+- magazines
+- advertisements
+- catalogues
+- service manuals
+- strategy guides
+- developer documentation
+- press releases
+- interviews
+- websites
+- forum posts
+- videos
+
+A publication may contain many evidence items.
+
+---
+
+# 17. Source Model
+
+A source identifies origin.
+
+Fields conceptually include:
+- source type
+- publisher/owner
+- URL or physical location
+- publication date
+- access date
+- archival identifier
+- reliability context
+- language
+
+Source reliability must remain contextual rather than universal.
+
+---
+
+# 18. Evidence Model
+
+Evidence is an addressable supporting observation.
+
+Examples:
+- page 42 of manual
+- photograph of PCB
+- measured latency
+- SHA-1 result
+- DAT entry
+- physical inspection
+- controlled compatibility test
+
+Evidence can support, contradict, or qualify claims.
+
+---
+
+# 19. Claim Model
+
+Canonical knowledge should be expressible as:
+
+`Subject → Predicate → Object`
+
+with:
+
+- scope
+- source
+- evidence
+- confidence
+- temporal validity
+- contributor
+- verification state
+
+Example:
+
+`Console Revision B → uses CPU → SH-2 revision X`
+
+A later revision can have a different claim without corrupting the parent model.
+
+---
+
+# 20. Relationship Model
+
+Relationships are first-class entities when they need evidence, history, or attributes.
+
+Core relationship types include:
+
+- developed_by
+- published_by
+- manufactured_by
+- distributed_by
+- licensed_by
+- released_on
+- released_in
+- localized_to
+- derived_from
+- port_of
+- remake_of
+- remaster_of
+- compilation_of
+- patches
+- translates
+- modifies
+- contains
+- represented_by
+- dumped_from
+- runs_on
+- compatible_with
+- incompatible_with
+- requires
+- supports
+- includes
+- bundled_with
+- variant_of
+- revision_of
+- successor_to
+- predecessor_of
+- replaces
+- related_to
+- owned_by
+- observed_in
+- evidenced_by
+
+Relationship semantics must remain explicit.
+
+---
+
+# 21. Temporal Model
+
+Knowledge can change without identity changing.
+
+Temporal data should distinguish:
+
+- valid time: when the fact was true
+- observed time: when RetroVault observed it
+- recorded time: when the system stored it
+
+Example:
+
+A console price in 1995 and its price in 2026 are different observations of the same object identity.
+
+---
+
+# 22. Identity Model
+
+Every canonical entity requires a stable internal identifier.
+
+Display names are mutable.
+Aliases are allowed.
+Regional names are allowed.
+Historical names are preserved.
+
+Identity merges must be explicit.
+
+Identity splits must preserve predecessor evidence.
+
+Never destroy the historical identity path during a merge.
+
+---
+
+# 23. Alias Model
+
+Aliases may include:
+- alternate spelling
+- regional title
+- transliteration
+- historical name
+- abbreviation
+- catalogue identifier
+- common community name
+- filename token
+
+Aliases improve discovery.
+
+Aliases must not automatically imply equivalence when ambiguity exists.
+
+---
+
+# 24. Identification Observation
+
+An identification observation records what was actually found.
+
+For a ROM file:
+
+- original filename
+- path/location reference
+- byte size
+- extension
+- container
+- hashes
+- extracted metadata
+- normalized filename
+- DAT matches
+- candidate identities
+
+This observation must remain immutable after scan completion, except through explicit correction/versioning.
+
+---
+
+# 25. Identification Candidate
+
+A candidate links an observation to a possible canonical entity.
+
+It should preserve:
+- candidate entity
+- matching signals
+- signal strengths
+- contradictions
+- confidence
+- matcher version
+- timestamp
+
+The user or system may promote a candidate to confirmed identity.
+
+---
+
+# 26. Match Evidence
+
+Signals include:
+
+### Strong
+- SHA-1
+- exact known dump identity
+- exact DAT match
+
+### Medium
+- MD5
+- CRC32 with size
+- exact structural metadata
+- exact product code
+
+### Weak
+- normalized filename
+- fuzzy similarity
+- region token
+- title similarity
+- contextual platform inference
+
+Signals must be independently represented so explanations remain possible.
+
+---
+
+# 27. Filename Model
+
+Filename is an observation and presentation layer.
+
+It must never become canonical identity.
+
+RetroVault should support:
+
+`Artifact identity → Naming policy → Canonical filename`
+
+Different frontends may require different naming policies.
+
+The canonical identity remains unchanged.
+
+---
+
+# 28. Naming Policy
+
+A naming policy defines deterministic output from canonical metadata.
+
+It may control:
+- title
+- region
+- language
+- revision
+- version
+- status tags
+- disc number
+- track number
+- special metadata
+- extension
+
+Policies must be versioned.
+
+A future policy must not silently rewrite an existing collection.
+
+---
+
+# 29. Save Data Model
+
+Save data is separate from software identity.
+
+It may relate to:
+- game release
+- software version
+- hardware
+- save format
+- physical cartridge
+- storage device
+- user collection
+
+Save data may have preservation and migration value independent of the original ROM.
+
+---
+
+# 30. Compatibility Model
+
+Compatibility is conditional.
+
+Represent:
+
+`Subject → works_with → Target`
+
+plus conditions such as:
+- hardware revision
+- firmware
+- adapter
+- region
+- software version
+- modification
+- configuration
+
+Never reduce conditional compatibility to a universal yes/no when the condition matters.
+
+---
+
+# 31. Modification Model
+
+A modification changes an otherwise identifiable object or artifact.
+
+Examples:
+- modded console
+- translated ROM
+- patched executable
+- flashcart firmware
+- aftermarket shell
+- upgraded storage
+
+Modification must reference its base identity.
+
+Original identity must remain recoverable.
+
+---
+
+# 32. Provenance Model
+
+Provenance answers:
+
+Where did this thing come from?
+
+For digital artifacts:
+- source media
+- dump method
+- dump source
+- archive source
+- acquisition source
+
+For physical objects:
+- seller
+- previous owner where appropriate
+- acquisition date
+- photographs
+- receipts where appropriate
+- inspection history
+
+Provenance should never be invented from assumptions.
+
+---
+
+# 33. Negative Knowledge
+
+The system must be able to record that something is not established.
+
+Examples:
+- claimed revision not found
+- compatibility not reproduced
+- supposed prototype unsupported
+- filename candidate rejected
+- authenticity signal contradicted
+
+Negative evidence prevents the same failed hypothesis from repeatedly resurfacing.
+
+---
+
+# 34. Entity Merge Rules
+
+Merge only when identity equivalence is sufficiently established.
+
+A merge must preserve:
+- previous identifiers
+- aliases
+- claims
+- evidence
+- relationships
+- audit history
+
+If uncertain, link entities as related rather than merge them.
+
+---
+
+# 35. Entity Split Rules
+
+Split when one canonical entity incorrectly represents materially distinct identities.
+
+A split must preserve:
+- original evidence
+- affected claims
+- provenance
+- previous references
+- correction history
+
+Historical references must remain resolvable.
+
+---
+
+# 36. Canonical Identity Principle
+
+The system's central pipeline is:
+
+```text
+Messy Artifact
+→ Observation
+→ Signals
+→ Candidate Identity
+→ Evidence Evaluation
+→ Canonical Identity
+→ Relationships
+→ Context
+→ Action
+```
+
+The final action may be rename, classify, display, compare, export, preserve, or do nothing.
+
+This pipeline is the bridge between the existing ROM-normalization implementation and the larger RetroVault platform.
+
+---
+
+# 37. Model Invariants
+
+The following must remain true:
+
+1. Identity is not filename.
+2. Identity is not hash alone.
+3. Observation is not claim.
+4. Claim is not evidence.
+5. Source is not evidence.
+6. Region is not merely text.
+7. Revision is not merely version.
+8. Condition does not redefine canonical identity.
+9. Ownership does not redefine canonical identity.
+10. Modification does not erase original identity.
+11. Uncertainty is valid state.
+12. Historical identity remains recoverable.
+13. User corrections outrank automatic suggestions for that user's collection.
+14. Stronger evidence outranks weaker evidence unless scope differs.
+15. Destructive actions require sufficient identity confidence.
+
+---
+
+# 38. Canonical Data Model Test
+
+A proposed new entity should exist only when collapsing it into another entity would lose information needed for at least one of:
+
+- identification
+- preservation
+- compatibility
+- history
+- collection management
+- repair
+- valuation
+- search
+- provenance
+
+A proposed new relationship should exist when the connection itself carries meaning, evidence, conditions, or history.
+
+This prevents ontology bloat while protecting important distinctions.
