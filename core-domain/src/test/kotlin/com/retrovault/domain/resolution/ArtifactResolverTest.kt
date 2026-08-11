@@ -1,0 +1,610 @@
+package com.retrovault.domain.resolution
+
+import com.retrovault.domain.Fixtures
+import com.retrovault.domain.TestCatalogDriver
+import com.retrovault.domain.evidence.MatchSignal
+import com.retrovault.domain.identity.ContainerKind
+import com.retrovault.domain.identity.HashAlgorithm
+import com.retrovault.domain.identity.HashDigests
+import com.retrovault.domain.policy.AutomationDecision
+import com.retrovault.domain.policy.AutomationPolicy
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/**
+ * The identification ladder.
+ *
+ * Every test here exists to defend one rule: RetroVault may miss a match, but
+ * it may never present a wrong match as certain.
+ */
+class ArtifactResolverTest {
+
+    private val goodCrc = Fixtures.crc("aabbccdd")
+    private val goodSha1 = Fixtures.sha1("1111")
+    private val goodMd5 = Fixtures.md5("2222")
+
+    // ------------------------------------------------------------------
+    // Exact identification
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `an exact sha1 match resolves exactly`() {
+        val record = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val observation = Fixtures.observation("totally-wrong-name.sfc")
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(observation)
+
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+        assertEquals(ConfidenceLevel.EXACT, resolution.confidence)
+        assertEquals(record.id, resolution.selected?.record?.id)
+        assertTrue(
+            resolution.selected!!.supporting.any {
+                it.signal == MatchSignal.HashExact(HashAlgorithm.SHA1)
+            },
+            "The reason must name the hash that decided it",
+        )
+    }
+
+    @Test
+    fun `a misleading filename never overrides content evidence`() {
+        val actual = Fixtures.record(
+            setName = "Chrono Trigger (USA)",
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val decoy = Fixtures.record(
+            setName = "Super Metroid (USA)",
+            size = 999_999,
+            hashes = Fixtures.digests(Fixtures.crc("99999999"), Fixtures.sha1("9999")),
+        )
+        val observation = Fixtures.observation("Super Metroid (USA).sfc")
+        val driver = TestCatalogDriver(
+            records = listOf(actual, decoy),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(observation)
+
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+        assertEquals(
+            "Chrono Trigger",
+            resolution.selected?.record?.canonicalTitle,
+            "Bytes outrank a filename that says something else",
+        )
+    }
+
+    @Test
+    fun `matching both md5 and sha1 is recorded as a multi-hash match`() {
+        val record = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            hashes = Fixtures.digests(goodCrc, goodMd5, goodSha1),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodMd5, goodSha1)),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("whatever.sfc"))
+
+        assertEquals(ResolutionState.EXACT_MULTI_HASH, resolution.state)
+        assertEquals(ConfidenceLevel.EXACT, resolution.confidence)
+    }
+
+    @Test
+    fun `the same dump in two datasets is corroboration, not ambiguity`() {
+        val noIntro = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+            source = Fixtures.source(provider = "no_intro"),
+        )
+        val redump = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+            source = Fixtures.source(provider = "redump"),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(noIntro, redump),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("mario.sfc"))
+
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+        assertEquals(2, resolution.selected?.independentSourceCount)
+        assertTrue(
+            resolution.selected!!.supporting.any {
+                it.signal is MatchSignal.CorroboratedByIndependentSources
+            },
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // Ambiguity and conflict
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `identical bytes described as two different releases stay ambiguous`() {
+        val japan = Fixtures.record(
+            setName = "Some Game (Japan)",
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val usa = Fixtures.record(
+            setName = "Some Game (USA)",
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(japan, usa),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("some game.sfc"))
+
+        assertEquals(ResolutionState.AMBIGUOUS, resolution.state)
+        assertNull(resolution.selected, "Ambiguity must never carry a selected identity")
+        assertEquals(2, resolution.candidates.size)
+        assertTrue(
+            resolution.candidates.all { candidate ->
+                candidate.contradicting.any { it.signal is MatchSignal.SharedHashAcrossIdentities }
+            },
+        )
+    }
+
+    @Test
+    fun `an ambiguous crc32 escalates to a stronger hash and resolves`() {
+        val wanted = Fixtures.record(
+            setName = "Game A (USA)",
+            hashes = Fixtures.digests(goodCrc, Fixtures.sha1("aaaa")),
+        )
+        val collision = Fixtures.record(
+            setName = "Game B (Japan)",
+            hashes = Fixtures.digests(goodCrc, Fixtures.sha1("cccc")),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(wanted, collision),
+            content = mapOf(null to Fixtures.digests(goodCrc, Fixtures.sha1("aaaa"))),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("unknown.sfc"))
+
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+        assertEquals(wanted.id, resolution.selected?.record?.id)
+        assertTrue(
+            driver.requests.any {
+                it is EvidenceRequest.ComputeHashes && HashAlgorithm.SHA1 in it.algorithms
+            },
+            "A CRC32 collision must trigger escalation, not a coin toss",
+        )
+    }
+
+    @Test
+    fun `crc32 agreeing while sha1 disagrees is a conflict, never a match`() {
+        val record = Fixtures.record(
+            setName = "Game A (USA)",
+            hashes = Fixtures.digests(goodCrc, Fixtures.sha1("aaaa")),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc, Fixtures.sha1("ffff"))),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("Game A (USA).sfc"))
+
+        assertEquals(ResolutionState.CONFLICT, resolution.state)
+        assertNull(resolution.selected)
+        assertTrue(
+            resolution.candidates.single().contradicting.any { it.signal is MatchSignal.HashMismatch },
+        )
+    }
+
+    @Test
+    fun `a crc32 collision with a different size never becomes a strict match`() {
+        val record = Fixtures.record(
+            setName = "Game A (USA)",
+            size = 1_048_576,
+            hashes = Fixtures.digests(goodCrc),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc)),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("Game A (USA).sfc", size = 524_288))
+
+        // Constitution section 200: differing bytes do not immediately mean a
+        // different release, so the record survives as a reviewable candidate.
+        // What must never happen is presenting it as content-level identity.
+        assertFalse(resolution.state.isExact)
+        assertEquals(ResolutionState.FUZZY_MATCH, resolution.state)
+        assertTrue(
+            resolution.selected!!.contradicting.any { it.signal is MatchSignal.SizeMismatch },
+            "The size disagreement must be stated, not hidden",
+        )
+        assertEquals(
+            AutomationDecision.REQUIRES_REVIEW,
+            AutomationPolicy().decide(resolution),
+            "A file whose bytes disagree with the catalogue is never renamed automatically",
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // Structural matching when the catalogue has no strong hash
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `crc32 plus size against a hash-poor record is strong, not exact`() {
+        val record = Fixtures.record(
+            setName = "Some Game (Europe)",
+            hashes = Fixtures.digests(goodCrc),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc)),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("scrambled.sfc"))
+
+        assertEquals(ResolutionState.STRUCTURAL_MATCH, resolution.state)
+        assertEquals(ConfidenceLevel.STRONG, resolution.confidence)
+        assertTrue(
+            resolution.selected!!.contradicting.any {
+                it.signal == MatchSignal.CatalogHasNoCryptographicHash
+            },
+            "The user must be told that only CRC32 was available",
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // Size filtering and fallback
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a size absent from the catalogue is reported, not treated as proof`() {
+        val record = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            size = 524_288,
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        // A trimmed copy: same game, fewer bytes.
+        val resolution = driver.resolve(Fixtures.observation("Super Mario World (USA).sfc", size = 500_000))
+
+        assertTrue(
+            resolution.pipelineEvidence.any { it.signal == MatchSignal.SizeAbsentFromCatalog },
+            "Constitution section 151: size filtering must be visible",
+        )
+        assertFalse(
+            driver.requests.any { it is EvidenceRequest.ComputeHashes },
+            "Hashing must be skipped when no catalogued size matches",
+        )
+        assertEquals(ResolutionState.FUZZY_MATCH, resolution.state)
+        assertEquals(ConfidenceLevel.PROBABLE, resolution.confidence)
+    }
+
+    @Test
+    fun `a fuzzy match records the size disagreement that kept it fuzzy`() {
+        val record = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            size = 524_288,
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        val resolution = driver.resolve(Fixtures.observation("Super Mario World (USA).sfc", size = 500_000))
+
+        assertEquals(ResolutionState.FUZZY_MATCH, resolution.state)
+        assertTrue(resolution.selected!!.contradicting.any { it.signal is MatchSignal.SizeMismatch })
+    }
+
+    @Test
+    fun `a scene-style filename can be identified by fallback`() {
+        val record = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            size = 524_288,
+            hashes = HashDigests.EMPTY,
+        )
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        val resolution = driver.resolve(
+            Fixtures.observation("Super.Mario.World.USA.SNES-Group.sfc", size = 524_288),
+        )
+
+        assertEquals(ResolutionState.STRONG_METADATA_MATCH, resolution.state)
+        assertEquals(record.id, resolution.selected?.record?.id)
+    }
+
+    @Test
+    fun `a scrubbed filename with no tokens still finds its title`() {
+        val record = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            size = 524_288,
+            hashes = HashDigests.EMPTY,
+        )
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        val resolution = driver.resolve(Fixtures.observation("super mario world.sfc", size = 524_288))
+
+        assertEquals(ResolutionState.STRONG_METADATA_MATCH, resolution.state)
+    }
+
+    @Test
+    fun `region variants are not collapsed by the fallback`() {
+        val usa = Fixtures.record("Some Game (USA)", size = 524_288)
+        val europe = Fixtures.record("Some Game (Europe)", size = 524_288)
+        val driver = TestCatalogDriver(records = listOf(usa, europe))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (Europe).sfc", size = 524_288))
+
+        assertEquals(europe.id, resolution.selected?.record?.id, "The region token must decide")
+        assertTrue(
+            resolution.candidates.any { candidate ->
+                candidate.record.id == usa.id &&
+                    candidate.contradicting.any { it.signal is MatchSignal.RegionConflict }
+            },
+            "The rejected region variant stays visible with its reason",
+        )
+    }
+
+    @Test
+    fun `region variants with no region token in the filename stay ambiguous`() {
+        val usa = Fixtures.record("Some Game (USA)", size = 524_288)
+        val europe = Fixtures.record("Some Game (Europe)", size = 524_288)
+        val driver = TestCatalogDriver(records = listOf(usa, europe))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game.sfc", size = 524_288))
+
+        assertEquals(ResolutionState.AMBIGUOUS, resolution.state)
+        assertNull(resolution.selected)
+    }
+
+    @Test
+    fun `revisions are not collapsed by the fallback`() {
+        val revA = Fixtures.record("Some Game (USA) (Rev A)", size = 524_288)
+        val original = Fixtures.record("Some Game (USA)", size = 524_288)
+        val driver = TestCatalogDriver(records = listOf(revA, original))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA) (Rev A).sfc", size = 524_288))
+
+        assertEquals(revA.id, resolution.selected?.record?.id)
+    }
+
+    @Test
+    fun `a sequel is never proposed for its predecessor`() {
+        val sequel = Fixtures.record("Super Mario Bros. 2 (USA)", size = 524_288)
+        val driver = TestCatalogDriver(records = listOf(sequel))
+
+        val resolution = driver.resolve(Fixtures.observation("Super Mario Bros. (USA).sfc", size = 524_288))
+
+        assertEquals(ResolutionState.NO_MATCH, resolution.state)
+        assertNull(resolution.selected)
+    }
+
+    @Test
+    fun `nothing plausible produces no match`() {
+        val driver = TestCatalogDriver(records = listOf(Fixtures.record("Chrono Trigger (USA)")))
+
+        val resolution = driver.resolve(Fixtures.observation("holiday-photos.sfc", size = 1))
+
+        assertEquals(ResolutionState.NO_MATCH, resolution.state)
+        assertEquals(ConfidenceLevel.UNKNOWN, resolution.confidence)
+    }
+
+    @Test
+    fun `an empty catalogue never matches anything`() {
+        val driver = TestCatalogDriver(records = emptyList())
+        val resolution = driver.resolve(Fixtures.observation("Super Mario World (USA).sfc"))
+        assertEquals(ResolutionState.NO_MATCH, resolution.state)
+    }
+
+    // ------------------------------------------------------------------
+    // Archives
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a zip holding one rom is identified from the contained entry`() {
+        val record = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            romName = "Super Mario World (USA).sfc",
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val observation = Fixtures.observation(
+            filename = "smw.zip",
+            size = 300_000,
+            container = ContainerKind.ZIP,
+            archiveEntries = listOf(
+                Fixtures.zipEntry(
+                    "Super Mario World (USA).sfc",
+                    size = 524_288,
+                    hashes = Fixtures.digests(goodCrc),
+                ),
+            ),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf("Super Mario World (USA).sfc" to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(observation)
+
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+        assertEquals(record.id, resolution.selected?.record?.id)
+    }
+
+    @Test
+    fun `a crc32 already known from the zip directory is not recomputed`() {
+        val record = Fixtures.record(setName = "Some Game (USA)", hashes = Fixtures.digests(goodCrc))
+        val observation = Fixtures.observation(
+            filename = "game.zip",
+            container = ContainerKind.ZIP,
+            archiveEntries = listOf(
+                Fixtures.zipEntry("game.sfc", hashes = Fixtures.digests(goodCrc)),
+            ),
+        )
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        driver.resolve(observation)
+
+        assertFalse(
+            driver.requests.any {
+                it is EvidenceRequest.ComputeHashes && it.algorithms == setOf(HashAlgorithm.CRC32)
+            },
+            "The ZIP central directory already provided CRC32",
+        )
+    }
+
+    @Test
+    fun `a zip holding several roms has no single identity`() {
+        val observation = Fixtures.observation(
+            filename = "collection.zip",
+            container = ContainerKind.ZIP,
+            archiveEntries = listOf(
+                Fixtures.zipEntry("a.sfc"),
+                Fixtures.zipEntry("b.sfc"),
+            ),
+        )
+        val driver = TestCatalogDriver(records = listOf(Fixtures.record("Some Game (USA)")))
+
+        val resolution = driver.resolve(observation)
+
+        assertEquals(ResolutionState.UNSUPPORTED, resolution.state)
+        assertNull(resolution.selected)
+        assertTrue(
+            resolution.pipelineEvidence.any { it.signal is MatchSignal.ArchiveHasMultipleArtifacts },
+        )
+    }
+
+    @Test
+    fun `an unsupported archive format is reported as unsupported`() {
+        val observation = Fixtures.observation(
+            filename = "game.7z",
+            container = ContainerKind.UNSUPPORTED_ARCHIVE,
+        )
+        val driver = TestCatalogDriver(records = listOf(Fixtures.record("Some Game (USA)")))
+
+        assertEquals(ResolutionState.UNSUPPORTED, driver.resolve(observation).state)
+    }
+
+    @Test
+    fun `an empty archive is reported as unsupported`() {
+        val observation = Fixtures.observation(
+            filename = "empty.zip",
+            container = ContainerKind.ZIP,
+            archiveEntries = emptyList(),
+        )
+        val driver = TestCatalogDriver(records = emptyList())
+
+        assertEquals(ResolutionState.UNSUPPORTED, driver.resolve(observation).state)
+    }
+
+    // ------------------------------------------------------------------
+    // Failure handling
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `an unreadable file falls back instead of failing the scan`() {
+        val record = Fixtures.record(setName = "Some Game (USA)", hashes = Fixtures.digests(goodCrc, goodSha1))
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            unreadable = setOf(HashAlgorithm.CRC32),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).sfc"))
+
+        assertTrue(resolution.pipelineEvidence.any { it.signal is MatchSignal.HashUnavailable })
+        assertFalse(resolution.state.isExact, "A file that could not be read is never exactly identified")
+    }
+
+    @Test
+    fun `a strong hash that cannot be read degrades to structural, not exact`() {
+        val record = Fixtures.record(setName = "Some Game (USA)", hashes = Fixtures.digests(goodCrc, goodSha1))
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc)),
+            unreadable = setOf(HashAlgorithm.SHA1),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).sfc"))
+
+        assertEquals(ResolutionState.STRUCTURAL_MATCH, resolution.state)
+        assertEquals(ConfidenceLevel.STRONG, resolution.confidence)
+    }
+
+    @Test
+    fun `an unavailable catalogue never invents a match`() {
+        val driver = TestCatalogDriver(
+            records = listOf(Fixtures.record("Some Game (USA)")),
+            catalogUnavailableFor = setOf(
+                EvidenceRequest.CatalogLookupBySize::class.java,
+                EvidenceRequest.CatalogLookupByTitle::class.java,
+            ),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).sfc"))
+
+        assertNull(resolution.selected)
+    }
+
+    // ------------------------------------------------------------------
+    // Determinism and provenance
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `the same inputs always produce the same resolution`() {
+        val records = listOf(
+            Fixtures.record("Some Game (USA)", hashes = Fixtures.digests(goodCrc, goodSha1)),
+            Fixtures.record("Some Game (Europe)", hashes = Fixtures.digests(Fixtures.crc("12121212"))),
+        )
+        val observation = Fixtures.observation("some game.sfc")
+        val content = mapOf<String?, HashDigests>(null to Fixtures.digests(goodCrc, goodSha1))
+
+        val first = TestCatalogDriver(records, content).resolve(observation)
+        val second = TestCatalogDriver(records, content).resolve(observation)
+
+        assertEquals(first.state, second.state)
+        assertEquals(first.selected?.record?.id, second.selected?.record?.id)
+        assertEquals(
+            first.explanation.map { it.signal.id },
+            second.explanation.map { it.signal.id },
+        )
+    }
+
+    @Test
+    fun `every resolution records the algorithm versions that produced it`() {
+        val driver = TestCatalogDriver(records = emptyList())
+        val resolution = driver.resolve(Fixtures.observation("anything.sfc"))
+
+        assertEquals(ArtifactResolver.VERSION, resolution.resolverVersion)
+        assertNotNull(resolution.tokenizerVersion)
+        assertNotNull(resolution.normalizerVersion)
+    }
+
+    @Test
+    fun `a resolution may never carry a selection its state forbids`() {
+        val failure = runCatching {
+            ArtifactResolution(
+                observationId = Fixtures.observation("x.sfc").id,
+                state = ResolutionState.AMBIGUOUS,
+                confidence = ConfidenceLevel.AMBIGUOUS,
+                selected = Candidate(record = Fixtures.record("Some Game (USA)")),
+                candidates = emptyList(),
+                pipelineEvidence = emptyList(),
+                hashesComputed = emptySet(),
+                consultedSources = emptyList(),
+                resolverVersion = "v",
+                tokenizerVersion = "v",
+                normalizerVersion = "v",
+            )
+        }
+        assertTrue(failure.isFailure, "The invariant must be enforced by the type, not by convention")
+    }
+}

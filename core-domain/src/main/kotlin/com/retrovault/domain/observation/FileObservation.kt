@@ -1,0 +1,138 @@
+package com.retrovault.domain.observation
+
+import com.retrovault.domain.identity.ContainerKind
+import com.retrovault.domain.identity.HashAlgorithm
+import com.retrovault.domain.identity.HashDigests
+import com.retrovault.domain.identity.HashValue
+import com.retrovault.domain.identity.ObservationId
+import com.retrovault.domain.identity.ScanSessionId
+import com.retrovault.domain.identity.StorageRef
+
+/**
+ * Points at the exact bytes to hash.
+ *
+ * DOMAIN_MODEL.md section 7: hashing an archive and hashing the ROM inside it
+ * are different observations, so every content operation names its scope.
+ */
+data class ArtifactContentRef(
+    val storageRef: StorageRef,
+    /** `null` means the file itself; otherwise the entry inside the container. */
+    val archiveEntryPath: String? = null,
+)
+
+/** One file inside a container, as seen without extracting it to disk. */
+data class ArchiveEntryObservation(
+    val entryPath: String,
+    val uncompressedSize: Long,
+    val hashes: HashDigests = HashDigests.EMPTY,
+    /** A container inside a container. Not descended into (SECURITY_SPEC.md section 3). */
+    val isNestedArchive: Boolean = false,
+) {
+    init {
+        require(entryPath.isNotBlank()) { "Archive entry path must not be blank" }
+        require(uncompressedSize >= 0) { "Archive entry size must not be negative" }
+    }
+
+    val filename: String get() = entryPath.substringAfterLast('/')
+}
+
+/**
+ * What the scanner actually saw, at one point in time.
+ *
+ * DOMAIN_MODEL.md section 24: this observation is immutable after the scan
+ * completes, except through explicit correction. Identity conclusions live
+ * elsewhere so that a later change of opinion cannot destroy the evidence it
+ * was based on (ARCHITECTURE.md section 7).
+ */
+data class FileObservation(
+    val id: ObservationId,
+    val sessionId: ScanSessionId,
+    val storageRef: StorageRef,
+    /** Directory containing the file. Rename collisions are scoped to it. */
+    val parentRef: StorageRef,
+    val filename: String,
+    /** Display path relative to the scan root. Never used as identity. */
+    val relativePath: String,
+    val size: Long,
+    val lastModifiedEpochMillis: Long?,
+    val container: ContainerKind,
+    val hashes: HashDigests = HashDigests.EMPTY,
+    val archiveEntries: List<ArchiveEntryObservation> = emptyList(),
+    val observedAtEpochMillis: Long,
+) {
+    init {
+        require(filename.isNotBlank()) { "Observed filename must not be blank" }
+        require(size >= 0) { "Observed size must not be negative" }
+    }
+
+    val extension: String?
+        get() = filename.substringAfterLast('.', missingDelimiterValue = "")
+            .takeIf { it.isNotEmpty() && it.length <= 8 }
+
+    val contentRef: ArtifactContentRef get() = ArtifactContentRef(storageRef)
+
+    fun withHash(hash: HashValue): FileObservation = copy(hashes = hashes.with(hash))
+
+    fun withArchiveEntries(entries: List<ArchiveEntryObservation>): FileObservation =
+        copy(archiveEntries = entries)
+
+    fun withEntryHash(entryPath: String, hash: HashValue): FileObservation =
+        copy(
+            archiveEntries = archiveEntries.map { entry ->
+                if (entry.entryPath == entryPath) entry.copy(hashes = entry.hashes.with(hash)) else entry
+            },
+        )
+
+    /**
+     * The entries that could plausibly be the identity-bearing ROM.
+     *
+     * Nested archives are excluded because this slice does not descend into
+     * them, and zero-length entries are excluded because directory markers are
+     * not artifacts.
+     */
+    val candidateArchiveEntries: List<ArchiveEntryObservation>
+        get() = archiveEntries.filter { !it.isNestedArchive && it.uncompressedSize > 0 }
+
+    /**
+     * The bytes that identity should be resolved against.
+     *
+     * For a raw file that is the file itself. For an archive holding exactly
+     * one candidate entry it is that entry. An archive holding several
+     * candidates has no single identity-bearing artifact, and the resolver
+     * reports that rather than choosing one (Constitution section 202).
+     */
+    fun identityBearingRef(): ArtifactContentRef? = when (container) {
+        ContainerKind.RAW -> contentRef
+        ContainerKind.ZIP -> candidateArchiveEntries.singleOrNull()
+            ?.let { ArtifactContentRef(storageRef, it.entryPath) }
+        ContainerKind.UNSUPPORTED_ARCHIVE -> null
+    }
+
+    /** Size of the identity-bearing bytes, or `null` when there is no single artifact. */
+    fun identityBearingSize(): Long? = when (container) {
+        ContainerKind.RAW -> size
+        ContainerKind.ZIP -> candidateArchiveEntries.singleOrNull()?.uncompressedSize
+        ContainerKind.UNSUPPORTED_ARCHIVE -> null
+    }
+
+    /** Hashes known for the identity-bearing bytes. */
+    fun identityBearingHashes(): HashDigests = when (container) {
+        ContainerKind.RAW -> hashes
+        ContainerKind.ZIP -> candidateArchiveEntries.singleOrNull()?.hashes ?: HashDigests.EMPTY
+        ContainerKind.UNSUPPORTED_ARCHIVE -> HashDigests.EMPTY
+    }
+
+    /**
+     * Name used for filename evidence.
+     *
+     * For an archive the contained entry name is usually the better signal,
+     * because repackaging tools rewrite the archive name far more often than
+     * the entry name. Both remain recorded.
+     */
+    fun identityBearingName(): String = when (container) {
+        ContainerKind.ZIP -> candidateArchiveEntries.singleOrNull()?.filename ?: filename
+        else -> filename
+    }
+
+    fun hasHash(algorithm: HashAlgorithm): Boolean = identityBearingHashes().contains(algorithm)
+}
