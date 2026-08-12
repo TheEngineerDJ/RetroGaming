@@ -7,6 +7,7 @@ import com.retrovault.domain.identity.RenameOperationId
 import com.retrovault.domain.identity.RenamePlanId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
+import com.retrovault.domain.naming.FilenameSanitizer
 import com.retrovault.domain.resolution.ConfidenceLevel
 import com.retrovault.domain.resolution.ResolutionState
 
@@ -109,6 +110,16 @@ data class RenameOperation(
     val directoryRef: StorageRef,
     val sourceName: String,
     val destinationName: String,
+    /**
+     * A staging name used when the rename cannot be done in one step.
+     *
+     * `game.sfc` to `Game.sfc` is a no-op on FAT and exFAT, where the two names
+     * are the same file, so the rename has to pass through a third name. It is
+     * journalled because it is a filesystem state the user could otherwise be
+     * left in: if the process dies between the two steps, the file exists under
+     * a name nothing else in the journal mentions.
+     */
+    val intermediateName: String? = null,
     /** Why RetroVault believed the rename was correct, kept for audit. */
     val resolutionState: ResolutionState,
     val confidence: ConfidenceLevel,
@@ -134,6 +145,24 @@ data class RenameOperation(
 
     fun markSkipped(failure: RenameFailure, atEpochMillis: Long): RenameOperation =
         copy(state = RenameOperationState.SKIPPED, finishedAtEpochMillis = atEpochMillis, failure = failure)
+}
+
+/**
+ * Staging names for renames that cannot be done in one step.
+ *
+ * Deterministic on purpose: the same operation always stages through the same
+ * name, so a journal entry written before a crash still describes the file that
+ * is on disk afterwards.
+ */
+object RenameStaging {
+    const val SUFFIX: String = ".rvtmp"
+
+    /** True when [source] and [destination] differ only by letter case. */
+    fun requiresStaging(source: String, destination: String): Boolean =
+        source != destination && source.equals(destination, ignoreCase = true)
+
+    fun nameFor(destination: String): String =
+        FilenameSanitizer.truncateStem(destination, SUFFIX) + SUFFIX
 }
 
 /** A batch of journalled operations sharing one validated plan. */
@@ -180,6 +209,8 @@ data class ReconciliationEvidence(
     val sourceSize: Long?,
     val destinationExists: Boolean,
     val destinationSize: Long?,
+    /** Whether the operation's staging name is present on disk. */
+    val intermediateExists: Boolean = false,
 )
 
 /**
@@ -203,6 +234,19 @@ object RenameReconciler {
             evidence.sourceExists && evidence.sourceSize == operation.preconditionSize
 
         return when {
+            // A file sitting under the staging name is the one interruption
+            // the user cannot diagnose alone: the name appears nowhere else.
+            // It is reported by name rather than guessed at.
+            evidence.intermediateExists && operation.intermediateName != null -> operation.copy(
+                state = RenameOperationState.RECONCILED_UNKNOWN,
+                finishedAtEpochMillis = atEpochMillis,
+                failure = RenameFailure.Unexpected(
+                    "The rename was interrupted part-way. The file is currently named " +
+                        "'${operation.intermediateName}' and should be renamed to " +
+                        "'${operation.destinationName}'.",
+                ),
+            )
+
             destinationLooksRight && !evidence.sourceExists -> operation.copy(
                 state = RenameOperationState.RECONCILED_COMPLETED,
                 finishedAtEpochMillis = atEpochMillis,

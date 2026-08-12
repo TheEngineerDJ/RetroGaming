@@ -1,5 +1,6 @@
 package com.retrovault.domain.rename
 
+import com.retrovault.domain.identity.PlanEntryId
 import com.retrovault.domain.identity.StorageRef
 import com.retrovault.domain.naming.FilenameSanitizer
 import com.retrovault.domain.naming.FilenameValidation
@@ -79,11 +80,29 @@ class RenamePlanValidator {
 
         fun issuesFor(entry: RenamePlanEntry) = perEntryIssues.getOrPut(entry) { mutableListOf() }
 
+        // Names this batch will free up. A destination that is currently taken
+        // by another file in the same batch is not a collision, it is an
+        // ordering constraint - and treating it as a collision would block the
+        // most ordinary case there is: a folder renamed to a new convention,
+        // where several files shift along by one name.
+        val vacated = renameEntries
+            .filter { it.proposedName != null && !it.proposedName.equals(it.currentName, ignoreCase = true) }
+            .associateBy { nameKey(it.directoryRef, it.currentName) }
+
         renameEntries.forEach { entry ->
-            validateEntry(entry, directories, states, issuesFor(entry))
+            validateEntry(entry, directories, states, vacated, issuesFor(entry))
         }
         detectDuplicateDestinations(renameEntries).forEach { (entry, issue) ->
             issuesFor(entry).add(issue)
+        }
+
+        val ordering = order(renameEntries)
+        ordering.cyclic.forEach { cycle ->
+            val issue = PlanIssue.RenameCycle(
+                entryIds = cycle.map { it.id },
+                names = cycle.map { it.currentName },
+            )
+            cycle.forEach { entry -> issuesFor(entry).add(issue) }
         }
 
         val validatedEntries = plan.entries.map { entry ->
@@ -92,7 +111,11 @@ class RenamePlanValidator {
         val validatedPlan = plan.copy(entries = validatedEntries)
         val allIssues = validatedEntries.flatMap { it.issues }
         val blocking = allIssues.filter { it.severity == IssueSeverity.BLOCKING }
-        val executable = validatedEntries.filter { it.action == PlannedAction.RENAME }
+        // Ordered, so the executor can run the list front to back and never
+        // find a destination still held by a file it has not moved yet.
+        val byId = validatedEntries.associateBy { it.id }
+        val executable = ordering.ordered.mapNotNull { byId[it.id] }
+            .filter { it.action == PlannedAction.RENAME }
 
         val verdict = when {
             blocking.isNotEmpty() -> PlanVerdict.BLOCKED
@@ -113,6 +136,7 @@ class RenamePlanValidator {
         entry: RenamePlanEntry,
         directories: Map<StorageRef, DirectorySnapshot>,
         states: Map<StorageRef, ArtifactState>,
+        vacated: Map<String, RenamePlanEntry>,
         issues: MutableList<PlanIssue>,
     ) {
         // Re-check the safety rule the planner already applied. A plan can be
@@ -175,14 +199,75 @@ class RenamePlanValidator {
         }
 
         val caseOnly = proposed.equals(entry.currentName, ignoreCase = true) && proposed != entry.currentName
+        val occupantMovesAway = vacated[nameKey(entry.directoryRef, proposed)]?.let { it.id != entry.id } == true
         if (caseOnly) {
             issues.add(PlanIssue.CaseOnlyRename(entry.id, proposed))
-        } else if (directory.containsIgnoringCase(proposed)) {
+        } else if (directory.containsIgnoringCase(proposed) && !occupantMovesAway) {
             // Case-insensitive on purpose: on FAT and exFAT, `game.sfc` and
             // `GAME.SFC` are the same file (Constitution section 244).
             issues.add(PlanIssue.DestinationOccupied(entry.id, proposed))
         }
     }
+
+    private data class Ordering(
+        val ordered: List<RenamePlanEntry>,
+        /** Groups that cannot be sequenced at all, one list per deadlock. */
+        val cyclic: List<List<RenamePlanEntry>>,
+    )
+
+    /**
+     * Sequences renames so no entry runs while another still holds its name.
+     *
+     * Each pass takes every entry whose destination is free of the entries not
+     * yet scheduled. When a pass can take nothing, whatever remains is waiting
+     * on itself - a swap - and is reported rather than attempted.
+     *
+     * An entry that only changes letter case is never considered to be blocking
+     * itself; the executor performs that one through a temporary name.
+     */
+    private fun order(entries: List<RenamePlanEntry>): Ordering {
+        val ordered = mutableListOf<RenamePlanEntry>()
+        var remaining = entries
+        while (remaining.isNotEmpty()) {
+            val held = remaining.associateBy { nameKey(it.directoryRef, it.currentName) }
+            val (ready, waiting) = remaining.partition { entry ->
+                val destination = entry.proposedName ?: return@partition true
+                val occupant = held[nameKey(entry.directoryRef, destination)]
+                occupant == null || occupant.id == entry.id
+            }
+            if (ready.isEmpty()) return Ordering(ordered, deadlocks(waiting))
+            ordered += ready
+            remaining = waiting
+        }
+        return Ordering(ordered, emptyList())
+    }
+
+    /**
+     * Splits the entries that could not be scheduled into independent groups.
+     *
+     * Two unrelated swaps in two folders are two separate problems, and the
+     * user should be able to exclude one without being told about the other.
+     */
+    private fun deadlocks(waiting: List<RenamePlanEntry>): List<List<RenamePlanEntry>> {
+        val byCurrent = waiting.associateBy { nameKey(it.directoryRef, it.currentName) }
+        val groups = mutableListOf<List<RenamePlanEntry>>()
+        val assigned = mutableSetOf<PlanEntryId>()
+        waiting.forEach { start ->
+            if (start.id in assigned) return@forEach
+            val group = mutableListOf<RenamePlanEntry>()
+            var current: RenamePlanEntry? = start
+            while (current != null && assigned.add(current.id)) {
+                group += current
+                val destination = current.proposedName ?: break
+                current = byCurrent[nameKey(current.directoryRef, destination)]
+            }
+            groups += group
+        }
+        return groups
+    }
+
+    private fun nameKey(directory: StorageRef, name: String): String =
+        "${directory.value} ${name.lowercase()}"
 
     private fun detectDuplicateDestinations(
         entries: List<RenamePlanEntry>,

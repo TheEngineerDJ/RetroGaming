@@ -32,7 +32,8 @@ sealed interface DatReadEvent {
     data class Record(
         val setName: String,
         val romName: String,
-        val size: Long,
+        /** `null` when the dataset states no size for this entry. */
+        val size: Long?,
         val hashes: HashDigests,
         val status: DumpStatus,
         val regions: List<RegionCode>,

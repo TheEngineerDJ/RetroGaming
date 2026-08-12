@@ -52,10 +52,16 @@ class RenamePlanValidatorTest {
         action: PlannedAction = PlannedAction.RENAME,
         automation: AutomationDecision = AutomationDecision.AUTOMATIC,
         size: Long = 524_288,
+        directoryRef: StorageRef = directory,
     ): RenamePlanEntry {
-        val observation = Fixtures.observation(filename, size = size, id = "obs-$filename")
+        val observation = Fixtures.observation(
+            filename,
+            size = size,
+            id = "obs-${directoryRef.value}-$filename",
+            directory = directoryRef.value,
+        )
         return RenamePlanEntry(
-            id = PlanEntryId("entry-$filename"),
+            id = PlanEntryId("entry-${directoryRef.value}-$filename"),
             observation = observation,
             resolution = resolution(observation, setName),
             currentName = filename,
@@ -325,5 +331,118 @@ class RenamePlanValidatorTest {
             first.issues.map { it.message },
             second.issues.map { it.message },
         )
+    }
+
+    // ------------------------------------------------------------------
+    // Ordering: a name held by another file in the same batch
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a destination held by a file that is itself moving is not a collision`() {
+        // The ordinary case for a folder being brought onto a new convention:
+        // every file shifts along by one name. Reading the occupant as a
+        // collision would block the batch that the feature exists to perform.
+        val first = entry("a.sfc", "b.sfc")
+        val second = entry("b.sfc", "c.sfc")
+        val plan = plan(first, second)
+
+        val validation = validator.validate(
+            plan,
+            snapshot("a.sfc", "b.sfc"),
+            states(first, second),
+            now,
+        )
+
+        assertEquals(PlanVerdict.EXECUTABLE, validation.verdict, validation.issues.map { it.message }.toString())
+    }
+
+    @Test
+    fun `renames are ordered so a name is freed before it is taken`() {
+        val first = entry("a.sfc", "b.sfc")
+        val second = entry("b.sfc", "c.sfc")
+
+        val validation = validator.validate(
+            plan(first, second),
+            snapshot("a.sfc", "b.sfc"),
+            states(first, second),
+            now,
+        )
+
+        assertEquals(
+            listOf("b.sfc", "a.sfc"),
+            validation.executable.map { it.currentName },
+            "'b.sfc' must vacate its name before 'a.sfc' can take it",
+        )
+    }
+
+    @Test
+    fun `a longer chain is ordered from the far end`() {
+        val a = entry("a.sfc", "b.sfc")
+        val b = entry("b.sfc", "c.sfc")
+        val c = entry("c.sfc", "d.sfc")
+
+        val validation = validator.validate(
+            plan(a, b, c),
+            snapshot("a.sfc", "b.sfc", "c.sfc"),
+            states(a, b, c),
+            now,
+        )
+
+        assertEquals(listOf("c.sfc", "b.sfc", "a.sfc"), validation.executable.map { it.currentName })
+    }
+
+    @Test
+    fun `two files that want each other's names are refused, not attempted`() {
+        val first = entry("a.sfc", "b.sfc")
+        val second = entry("b.sfc", "a.sfc")
+
+        val validation = validator.validate(
+            plan(first, second),
+            snapshot("a.sfc", "b.sfc"),
+            states(first, second),
+            now,
+        )
+
+        assertEquals(PlanVerdict.BLOCKED, validation.verdict)
+        val cycle = validation.issues.filterIsInstance<PlanIssue.RenameCycle>().first()
+        assertEquals(setOf("a.sfc", "b.sfc"), cycle.names.toSet())
+        assertTrue(validation.executable.isEmpty())
+    }
+
+    @Test
+    fun `a destination held by a file that is staying put is still a collision`() {
+        val moving = entry("a.sfc", "keeper.sfc")
+        val staying = entry("keeper.sfc", "keeper.sfc", action = PlannedAction.SKIP_ALREADY_CANONICAL)
+
+        val validation = validator.validate(
+            plan(moving, staying),
+            snapshot("a.sfc", "keeper.sfc"),
+            states(moving, staying),
+            now,
+        )
+
+        assertEquals(PlanVerdict.BLOCKED, validation.verdict)
+        assertTrue(validation.issues.any { it is PlanIssue.DestinationOccupied })
+    }
+
+    @Test
+    fun `an unrelated deadlock is reported separately from another folder's`() {
+        val otherDirectory = StorageRef("content://tree/other")
+        val a = entry("a.sfc", "b.sfc")
+        val b = entry("b.sfc", "a.sfc")
+        val c = entry("c.sfc", "d.sfc", directoryRef = otherDirectory)
+        val d = entry("d.sfc", "c.sfc", directoryRef = otherDirectory)
+
+        val validation = validator.validate(
+            plan(a, b, c, d),
+            snapshot("a.sfc", "b.sfc") + mapOf(
+                otherDirectory to DirectorySnapshot(otherDirectory, setOf("c.sfc", "d.sfc")),
+            ),
+            states(a, b, c, d),
+            now,
+        )
+
+        val cycles = validation.issues.filterIsInstance<PlanIssue.RenameCycle>().distinct()
+        assertEquals(2, cycles.size, "Two folders' swaps are two problems: ${cycles.map { it.names }}")
     }
 }

@@ -25,6 +25,7 @@ import com.retrovault.domain.rename.RenamePlanEntry
 import com.retrovault.domain.rename.RenamePlanValidation
 import com.retrovault.domain.rename.RenamePlanValidator
 import com.retrovault.domain.rename.RenameReconciler
+import com.retrovault.domain.rename.RenameStaging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -222,7 +223,7 @@ class ExecuteRenamePlanUseCase(
                 val executing = operation.markExecuting(clock.nowEpochMillis())
                 journal.updateOperation(executing)
 
-                val result = executor.rename(executing.sourceRef, executing.destinationName)
+                val result = performRename(executing)
                 val finished = when (result) {
                     is Outcome.Success -> executing.markCompleted(clock.nowEpochMillis())
                     is Outcome.Failure -> executing.markFailed(
@@ -261,6 +262,26 @@ class ExecuteRenamePlanUseCase(
         return Outcome.success(RenameExecutionResult(batch.copy(operations = completed + remaining)))
     }
 
+    /**
+     * Performs one journalled rename, staging through a temporary name when a
+     * single step cannot express the change.
+     *
+     * A case-only rename is a no-op on FAT and exFAT, where `game.sfc` and
+     * `Game.sfc` name the same file, so the provider either refuses it or
+     * reports success without changing anything. Going through a third name
+     * makes both steps real renames. The staging name is already in the journal
+     * before this runs, so an interruption between the steps is recoverable.
+     */
+    private suspend fun performRename(operation: RenameOperation): Outcome<StorageRef> {
+        val staging = operation.intermediateName
+            ?: return executor.rename(operation.sourceRef, operation.destinationName)
+
+        return when (val staged = executor.rename(operation.sourceRef, staging)) {
+            is Outcome.Failure -> staged
+            is Outcome.Success -> executor.rename(staged.value, operation.destinationName)
+        }
+    }
+
     private fun toOperation(batchId: RenameBatchId, entry: RenamePlanEntry): RenameOperation =
         RenameOperation(
             id = RenameOperationId(ids.next("operation")),
@@ -272,6 +293,9 @@ class ExecuteRenamePlanUseCase(
             destinationName = requireNotNull(entry.proposedName) {
                 "Validation approved an entry with no destination name"
             },
+            intermediateName = entry.proposedName
+                ?.takeIf { RenameStaging.requiresStaging(entry.currentName, it) }
+                ?.let(RenameStaging::nameFor),
             resolutionState = entry.resolution.state,
             confidence = entry.resolution.confidence,
             identityDescription = entry.resolution.selected
@@ -344,6 +368,8 @@ class ReconcileInterruptedRenamesUseCase(
             // the only explanation the journal has, so the recorded precondition
             // size is what the destination is checked against.
             destinationSize = if (destinationExists && !sourceExists) operation.preconditionSize else null,
+            intermediateExists = operation.intermediateName
+                ?.let { names?.containsIgnoringCase(it) } == true,
         )
     }
 }

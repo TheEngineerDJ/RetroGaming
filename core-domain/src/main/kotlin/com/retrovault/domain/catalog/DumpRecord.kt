@@ -60,7 +60,15 @@ data class DumpRecord(
     val setName: String,
     /** `<rom name="...">` verbatim. */
     val romName: String,
-    val size: Long,
+    /**
+     * Catalogued byte size, or `null` when the dataset does not state one.
+     *
+     * Some DATs omit `size` on `<disk>` entries. Dropping those records would
+     * lose every hash they carry, so an unknown size is modelled as unknown
+     * rather than as a parse failure - and it produces no size evidence in
+     * either direction.
+     */
+    val size: Long?,
     val hashes: HashDigests,
     val platform: PlatformName,
     val canonicalTitle: String,
@@ -76,9 +84,21 @@ data class DumpRecord(
     val externalId: String?,
 ) {
     init {
-        require(size >= 0) { "DumpRecord size must not be negative" }
+        require(size == null || size >= 0) { "DumpRecord size must not be negative" }
         require(romName.isNotBlank()) { "DumpRecord romName must not be blank" }
     }
+
+    /** Whether this record can contribute size evidence at all. */
+    val hasKnownSize: Boolean get() = size != null
+
+    /**
+     * Whether this record may be used to identify a local file.
+     *
+     * ROMRenamer excludes `nodump`/`baddump` entries from its index for the
+     * same reason: their hashes are placeholders or belong to a known-broken
+     * dump, so matching against them asserts a wrong identity confidently.
+     */
+    val isMatchable: Boolean get() = status.isReliableForMatching
 
     val crc32: HashValue? get() = hashes[HashAlgorithm.CRC32]
     val md5: HashValue? get() = hashes[HashAlgorithm.MD5]
@@ -130,7 +150,7 @@ data class DumpRecord(
             source: DatSourceRef,
             setName: String,
             romName: String,
-            size: Long,
+            size: Long?,
             hashes: HashDigests,
             status: DumpStatus = DumpStatus.GOOD,
             externalId: String? = null,

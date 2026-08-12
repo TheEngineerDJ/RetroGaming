@@ -49,7 +49,7 @@ internal object RecordMapper {
         ),
         setName = row.getString(1),
         romName = row.getString(2),
-        size = row.getLong(3),
+        size = row.getLongOrNull(3),
         hashes = HashDigests.EMPTY,
         platform = PlatformName(row.getString(4)),
         canonicalTitle = row.getString(5),

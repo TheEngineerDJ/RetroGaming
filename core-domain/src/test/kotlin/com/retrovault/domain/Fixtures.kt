@@ -56,7 +56,7 @@ object Fixtures {
     fun record(
         setName: String,
         romName: String = "$setName.sfc",
-        size: Long = 524_288,
+        size: Long? = 524_288,
         hashes: HashDigests = HashDigests.EMPTY,
         source: DatSourceRef = source(),
         id: String = "${source.provider}:$setName:$romName",
@@ -135,8 +135,14 @@ class TestCatalogDriver(
             return EvidenceResponse.CatalogUnavailable("catalogue offline")
         }
         return when (request) {
+            // Contract: an exact size match, plus every record the dataset
+            // states no size for. An unknown size cannot rule a record out,
+            // and excluding those would make them unreachable through the
+            // whole ladder.
             is EvidenceRequest.CatalogLookupBySize ->
-                EvidenceResponse.CatalogRecords(records.filter { it.size == request.size })
+                EvidenceResponse.CatalogRecords(
+                    records.filter { it.size == null || it.size == request.size },
+                )
 
             is EvidenceRequest.CatalogLookupByHash ->
                 EvidenceResponse.CatalogRecords(

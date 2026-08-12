@@ -188,6 +188,22 @@ enum class DumpStatus {
     NO_DUMP,
 
     UNKNOWN,
+    ;
+
+    /**
+     * Whether a record with this status may be used to identify a local file.
+     *
+     * `nodump` entries carry placeholder hashes and `baddump` entries carry the
+     * hashes of a known-broken dump. Indexing either would point a real file at
+     * the wrong release with full confidence, which is the exact failure mode
+     * TESTING_SPEC.md section 1 forbids.
+     *
+     * The records are still stored: Constitution section 199 keeps imperfect
+     * artifacts as evidence. They are excluded from matching, not from
+     * knowledge.
+     */
+    val isReliableForMatching: Boolean
+        get() = this != BAD_DUMP && this != NO_DUMP
 }
 
 /**

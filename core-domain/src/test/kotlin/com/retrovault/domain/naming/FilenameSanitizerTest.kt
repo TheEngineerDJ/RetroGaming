@@ -2,6 +2,7 @@ package com.retrovault.domain.naming
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -103,5 +104,34 @@ class FilenameSanitizerTest {
         val suffix = " (USA).sfc"
         val once = FilenameSanitizer.truncateStem(stem, suffix)
         assertEquals(once, FilenameSanitizer.truncateStem(once, suffix))
+    }
+
+    @Test
+    fun `truncation never splits a surrogate pair`() {
+        // Cutting between the halves of an astral character leaves an unpaired
+        // surrogate, which encodes to a replacement character and silently
+        // corrupts the name.
+        val emoji = "\uD83C\uDFAE" // game controller, four UTF-8 bytes
+        val stem = emoji.repeat(80)
+
+        val truncated = FilenameSanitizer.truncateStem(stem, " (USA).sfc")
+
+        assertTrue(truncated.isNotEmpty())
+        assertFalse(truncated.last().isHighSurrogate(), "The trailing half of a pair must not be left behind")
+        assertEquals(
+            truncated,
+            String(truncated.toByteArray(Charsets.UTF_8), Charsets.UTF_8),
+            "A truncated name must survive a UTF-8 round trip unchanged",
+        )
+    }
+
+    @Test
+    fun `a truncated multibyte stem still fits the byte budget`() {
+        val stem = "\uD83C\uDFAE".repeat(80)
+        val suffix = " (USA).sfc"
+
+        val name = FilenameSanitizer.truncateStem(stem, suffix) + suffix
+
+        assertTrue(name.toByteArray(Charsets.UTF_8).size <= FilenameSanitizer.MAX_FILENAME_BYTES)
     }
 }

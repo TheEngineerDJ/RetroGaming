@@ -29,8 +29,16 @@ class SqlDumpCatalog(
 
     // ---------------------------------------------------------------- reads
 
+    /**
+     * Records with no stated size are returned alongside the exact matches.
+     *
+     * An unknown size cannot rule a record out. Excluding those entries here
+     * would make a `<disk>` dump unfindable by the size step even when its
+     * hashes match perfectly - a missed match caused by absent metadata rather
+     * than by evidence.
+     */
     override suspend fun findBySize(size: Long): List<DumpRecord> = read {
-        selectRecords("r.size = ?", listOf(size))
+        selectRecords("(r.size = ? OR r.size IS NULL)", listOf(size))
     }
 
     override suspend fun findByHash(hash: HashValue): List<DumpRecord> = read {
@@ -121,7 +129,8 @@ class SqlDumpCatalog(
         database.execute(
             "INSERT OR REPLACE INTO dump_record (id, source_id, set_name, rom_name, size, platform, " +
                 "canonical_title, normalized_title, revision, version, disc_number, status, external_id, " +
-                "regions, languages, flags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "regions, languages, flags, matchable) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             listOf(
                 record.id.value,
                 sourceId.value,
@@ -139,6 +148,7 @@ class SqlDumpCatalog(
                 RecordMapper.encodeList(record.regions.map { it.code }),
                 RecordMapper.encodeList(record.languages.map { it.code }),
                 RecordMapper.encodeList(record.flags.map { it.name }.sorted()),
+                if (record.isMatchable) 1L else 0L,
             ),
         )
         record.hashes.asList().forEach { hash ->
@@ -170,7 +180,10 @@ class SqlDumpCatalog(
                 "r.regions, r.languages, r.flags, " +
                 "s.id, s.provider, s.set_name, s.version, s.platform, s.imported_at, s.source_digest " +
                 "FROM dump_record r JOIN dat_source s ON s.id = r.source_id " +
-                "WHERE s.state = ? AND ($where) ORDER BY $orderBy" +
+                // `matchable = 0` marks nodump/baddump entries. They stay in
+                // the table as knowledge but never reach the resolver, because
+                // their hashes belong to a placeholder or a broken dump.
+                "WHERE s.state = ? AND r.matchable = 1 AND ($where) ORDER BY $orderBy" +
                 if (limit != null) " LIMIT $limit" else "",
             listOf(STATE_READY) + arguments + extraArguments,
         ) { row -> RecordMapper.map(row) }

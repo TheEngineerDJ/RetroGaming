@@ -6,10 +6,12 @@ import com.retrovault.domain.identity.RenameOperationId
 import com.retrovault.domain.identity.RenamePlanId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
+import com.retrovault.domain.naming.FilenameSanitizer
 import com.retrovault.domain.resolution.ConfidenceLevel
 import com.retrovault.domain.resolution.ResolutionState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -177,5 +179,72 @@ class RenameReconcilerTest {
             val detail = (failure as? RenameFailure.ProviderRejected)?.detail
             assertEquals(failure, RenameFailure.fromCode(failure.code, detail))
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Case-only renames, which need a staging name
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `only a case-only rename needs staging`() {
+        assertTrue(RenameStaging.requiresStaging("game.sfc", "Game.sfc"))
+        assertFalse(RenameStaging.requiresStaging("game.sfc", "game.sfc"))
+        assertFalse(RenameStaging.requiresStaging("a.sfc", "Some Game (USA).sfc"))
+    }
+
+    @Test
+    fun `a staging name is derived deterministically and stays within the byte budget`() {
+        val long = "x".repeat(300) + ".sfc"
+
+        val staging = RenameStaging.nameFor(long)
+
+        assertEquals(staging, RenameStaging.nameFor(long), "A crash must not change the staging name")
+        assertTrue(staging.endsWith(RenameStaging.SUFFIX))
+        assertTrue(
+            staging.toByteArray(Charsets.UTF_8).size <= FilenameSanitizer.MAX_FILENAME_BYTES,
+            "A staging name that cannot be written is worse than no staging at all",
+        )
+    }
+
+    @Test
+    fun `a file left under its staging name is reported by name`() {
+        val staged = operation().copy(intermediateName = "Some Game (USA).sfc.rvtmp")
+
+        val result = RenameReconciler.reconcile(
+            staged,
+            ReconciliationEvidence(
+                sourceExists = false,
+                sourceSize = null,
+                destinationExists = false,
+                destinationSize = null,
+                intermediateExists = true,
+            ),
+            now,
+        )
+
+        assertEquals(RenameOperationState.RECONCILED_UNKNOWN, result.state)
+        assertTrue(
+            result.failure?.message?.contains("Some Game (USA).sfc.rvtmp") == true,
+            "The user cannot find the file unless the staging name is named: ${result.failure?.message}",
+        )
+    }
+
+    @Test
+    fun `a completed staged rename is still recognised as completed`() {
+        val staged = operation().copy(intermediateName = "Some Game (USA).sfc.rvtmp")
+
+        val result = RenameReconciler.reconcile(
+            staged,
+            ReconciliationEvidence(
+                sourceExists = false,
+                sourceSize = null,
+                destinationExists = true,
+                destinationSize = size,
+                intermediateExists = false,
+            ),
+            now,
+        )
+
+        assertEquals(RenameOperationState.RECONCILED_COMPLETED, result.state)
     }
 }

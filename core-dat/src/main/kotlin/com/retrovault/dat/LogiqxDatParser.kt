@@ -28,7 +28,8 @@ data class DatHeader(
 data class DatRomEntry(
     val gameName: String,
     val romName: String,
-    val size: Long,
+    /** `null` when the dataset states no size, as `<disk>` entries usually do. */
+    val size: Long?,
     val hashes: HashDigests,
     val status: DumpStatus,
     val serial: String?,
@@ -192,7 +193,9 @@ class LogiqxDatParser(private val limits: XmlLimits = XmlLimits()) {
                 is XmlEvent.StartElement -> {
                     currentText = event.name.lowercase()
                     when (currentText) {
-                        "rom" -> roms.add(event.attributes)
+                        // A <disk> is a CHD-backed dump. It is catalogued the
+                        // same way as a <rom>, only without a size.
+                        "rom", "disk" -> roms.add(event.attributes)
                         "release" -> {
                             event.attributes["region"]?.let { raw ->
                                 RegionVocabulary.parse(raw)?.let(regions::add)
@@ -253,15 +256,6 @@ class LogiqxDatParser(private val limits: XmlLimits = XmlLimits()) {
         if (romName.isNullOrBlank()) {
             return DatParseEvent.MalformedRecord(gameName, null, "the rom has no name")
         }
-        val rawSize = attributes["size"]?.trim()
-        val size = rawSize?.toLongOrNull()
-        if (size == null || size < 0) {
-            return DatParseEvent.MalformedRecord(
-                gameName,
-                romName,
-                if (rawSize == null) "the rom has no size" else "the rom size '$rawSize' is not a number",
-            )
-        }
         if (!seen.add(romName.lowercase())) {
             return DatParseEvent.SkippedRecord(
                 gameName,
@@ -269,16 +263,29 @@ class LogiqxDatParser(private val limits: XmlLimits = XmlLimits()) {
             )
         }
 
-        // A malformed hash is dropped rather than fatal: the record still
-        // carries a usable size and name, and losing one digest is better than
-        // losing the entry (SECURITY_SPEC.md section 1).
+        // A malformed hash is dropped rather than fatal: losing one digest is
+        // better than losing the entry (SECURITY_SPEC.md section 1). Some DATs
+        // spell the CRC attribute `crc32`.
         val hashes = HashDigests.of(
             *listOfNotNull(
-                HashValue.parse(HashAlgorithm.CRC32, attributes["crc"]),
+                HashValue.parse(HashAlgorithm.CRC32, attributes["crc"] ?: attributes["crc32"]),
                 HashValue.parse(HashAlgorithm.MD5, attributes["md5"]),
                 HashValue.parse(HashAlgorithm.SHA1, attributes["sha1"]),
             ).toTypedArray(),
         )
+        // Size alone is not identity. A record with no hash could only ever be
+        // matched on length, which would attach a confident name to any file
+        // that happened to be the right number of bytes - the exact failure
+        // TESTING_SPEC.md section 1 forbids. It is reported, not indexed.
+        if (hashes.isEmpty) {
+            return DatParseEvent.SkippedRecord(gameName, "'$romName' carries no hash")
+        }
+
+        // Size is corroboration, not identity, so an absent or unreadable one
+        // downgrades the record to "size unknown" instead of discarding every
+        // hash it carries. `<disk>` entries legitimately omit it.
+        val rawSize = attributes["size"]?.trim()
+        val size = rawSize?.toLongOrNull()?.takeIf { it >= 0 }
 
         return DatParseEvent.Entry(
             DatRomEntry(

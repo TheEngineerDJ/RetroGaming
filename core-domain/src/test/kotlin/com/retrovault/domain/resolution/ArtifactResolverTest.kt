@@ -531,12 +531,50 @@ class ArtifactResolverTest {
             records = listOf(record),
             content = mapOf(null to Fixtures.digests(goodCrc)),
             unreadable = setOf(HashAlgorithm.SHA1),
+            // Two-pass mode: CRC32 is read first and succeeds, then the
+            // escalation to SHA1 fails. This is the only arrangement in which
+            // the resolver holds a CRC32 it cannot corroborate.
+            resolver = ArtifactResolver(ResolverConfig(computeStrongHashesUpFront = false)),
         )
 
         val resolution = driver.resolve(Fixtures.observation("Some Game (USA).sfc"))
 
         assertEquals(ResolutionState.STRUCTURAL_MATCH, resolution.state)
         assertEquals(ConfidenceLevel.STRONG, resolution.confidence)
+    }
+
+    @Test
+    fun `strong hashes are computed in the same pass as crc32 by default`() {
+        val record = Fixtures.record(setName = "Some Game (USA)", hashes = Fixtures.digests(goodCrc, goodSha1))
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).sfc"))
+
+        val reads = driver.requests.filterIsInstance<EvidenceRequest.ComputeHashes>()
+        assertEquals(1, reads.size, "The file must be read once, not once per algorithm: $reads")
+        assertTrue(HashAlgorithm.SHA1 in reads.single().algorithms)
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+    }
+
+    @Test
+    fun `one pass and two pass hashing reach the same conclusion`() {
+        val record = Fixtures.record(setName = "Some Game (USA)", hashes = Fixtures.digests(goodCrc, goodSha1))
+        val content = mapOf<String?, HashDigests>(null to Fixtures.digests(goodCrc, goodSha1))
+        val observation = Fixtures.observation("Some Game (USA).sfc")
+
+        val onePass = TestCatalogDriver(listOf(record), content).resolve(observation)
+        val twoPass = TestCatalogDriver(
+            records = listOf(record),
+            content = content,
+            resolver = ArtifactResolver(ResolverConfig(computeStrongHashesUpFront = false)),
+        ).resolve(observation)
+
+        assertEquals(twoPass.state, onePass.state)
+        assertEquals(twoPass.confidence, onePass.confidence)
+        assertEquals(twoPass.selected?.record?.id, onePass.selected?.record?.id)
     }
 
     @Test
@@ -606,5 +644,149 @@ class ArtifactResolverTest {
             )
         }
         assertTrue(failure.isFailure, "The invariant must be enforced by the type, not by convention")
+    }
+
+    // ------------------------------------------------------------------
+    // Multi-file releases: a title alone cannot say which track this is
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a multi-track release matched only by title stays ambiguous`() {
+        // The release is identified, but the file is not: renaming a .bin to
+        // the cue sheet's name is worse than leaving it alone.
+        val cue = Fixtures.record(
+            setName = "Some Game (USA)",
+            romName = "Some Game (USA).cue",
+            size = 524_288,
+            id = "cue",
+        )
+        val bin = Fixtures.record(
+            setName = "Some Game (USA)",
+            romName = "Some Game (USA) (Track 1).bin",
+            size = 524_288,
+            id = "bin",
+        )
+        val driver = TestCatalogDriver(records = listOf(cue, bin))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).iso", size = 524_288))
+
+        assertEquals(ResolutionState.AMBIGUOUS, resolution.state)
+        assertNull(resolution.selected)
+    }
+
+    @Test
+    fun `the on-disk extension picks the track when exactly one matches`() {
+        val cue = Fixtures.record(
+            setName = "Some Game (USA)",
+            romName = "Some Game (USA).cue",
+            size = 524_288,
+            id = "cue",
+        )
+        val bin = Fixtures.record(
+            setName = "Some Game (USA)",
+            romName = "Some Game (USA) (Track 1).bin",
+            size = 524_288,
+            id = "bin",
+        )
+        val driver = TestCatalogDriver(records = listOf(cue, bin))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).cue", size = 524_288))
+
+        assertEquals("cue", resolution.selected?.record?.id?.value)
+    }
+
+    @Test
+    fun `a single-file release is unaffected by the multi-track guard`() {
+        val record = Fixtures.record("Some Game (USA)", size = 524_288)
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).sfc", size = 524_288))
+
+        assertEquals(record.id, resolution.selected?.record?.id)
+    }
+
+    // ------------------------------------------------------------------
+    // Noisy filenames
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a site watermark does not prevent a title match`() {
+        val record = Fixtures.record("Super Mario World (USA)", size = 524_288)
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        val resolution = driver.resolve(
+            Fixtures.observation("www.example.com - Super Mario World (USA).sfc", size = 524_288),
+        )
+
+        assertEquals(record.id, resolution.selected?.record?.id)
+    }
+
+    @Test
+    fun `a trailing scene tag does not prevent a title match`() {
+        val record = Fixtures.record("Red Hot Rumble (USA)", size = 524_288)
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        val resolution = driver.resolve(
+            Fixtures.observation("Red Hot Rumble (USA)-memorypsp.sfc", size = 524_288),
+        )
+
+        assertEquals(record.id, resolution.selected?.record?.id)
+    }
+
+    @Test
+    fun `stripping a tag never rescues a sequel mismatch`() {
+        // The stripped reading must not be allowed to override a numbering
+        // conflict found in the unstripped one.
+        val sequel = Fixtures.record("Some Game 2 (USA)", size = 524_288)
+        val driver = TestCatalogDriver(records = listOf(sequel))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA)-group.sfc", size = 524_288))
+
+        assertNull(resolution.selected)
+    }
+
+    // ------------------------------------------------------------------
+    // Records the catalogue states no size for
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a record with no stated size can still be matched exactly on its hash`() {
+        val record = Fixtures.record(
+            setName = "Arcade Thing (USA)",
+            romName = "arcadething",
+            size = null,
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("arcadething", size = 524_288))
+
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+        assertEquals(record.id, resolution.selected?.record?.id)
+    }
+
+    @Test
+    fun `an unknown catalogue size produces no size evidence in either direction`() {
+        val record = Fixtures.record(
+            setName = "Arcade Thing (USA)",
+            romName = "arcadething",
+            size = null,
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("arcadething", size = 999_999))
+
+        assertNull(
+            resolution.selected?.contradicting?.firstOrNull { it.signal is MatchSignal.SizeMismatch },
+            "An absent size cannot contradict anything",
+        )
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
     }
 }

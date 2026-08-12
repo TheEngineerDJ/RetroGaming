@@ -78,6 +78,25 @@ sealed interface PlanIssue {
             get() = "'$destination' already exists in this folder and is a different file."
     }
 
+    /**
+     * Two or more files want each other's names.
+     *
+     * `a.sfc` to `b.sfc` and `b.sfc` to `a.sfc` cannot be ordered: whichever
+     * runs first overwrites or collides with the other. Resolving it needs a
+     * temporary name, which would leave the library in a state no journal entry
+     * describes if the process died in between. RetroVault refuses instead and
+     * asks the user to exclude one side.
+     */
+    data class RenameCycle(
+        override val entryIds: List<PlanEntryId>,
+        val names: List<String>,
+    ) : PlanIssue {
+        override val severity: IssueSeverity get() = IssueSeverity.BLOCKING
+        override val message: String
+            get() = "${names.joinToString(", ")} would have to swap names. " +
+                "Exclude one of them and try again."
+    }
+
     data class InvalidDestinationName(
         val entryId: PlanEntryId,
         val reason: InvalidNameReason,

@@ -13,6 +13,7 @@ import com.retrovault.domain.evidence.MatchSignal
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.DatSourceId
 import com.retrovault.domain.identity.DumpRecordId
+import com.retrovault.domain.identity.DumpStatus
 import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.HashDigests
 import com.retrovault.domain.identity.HashValue
@@ -24,6 +25,7 @@ import com.retrovault.domain.identity.RenameOperationId
 import com.retrovault.domain.identity.RenamePlanId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
+import com.retrovault.domain.naming.TitleNormalizer
 import com.retrovault.domain.observation.ArchiveEntryObservation
 import com.retrovault.domain.observation.FileObservation
 import com.retrovault.domain.rename.RenameBatch
@@ -81,11 +83,12 @@ class PersistenceTest {
 
     private fun record(
         setName: String,
-        size: Long = 4096,
+        size: Long? = 4096,
         crc: String = "aabbccdd",
         sha1: String? = null,
         id: String = "record-$setName",
         from: DatSourceRef = source,
+        status: DumpStatus = DumpStatus.GOOD,
     ): DumpRecord = DumpRecord.derive(
         id = DumpRecordId(id),
         source = from,
@@ -98,6 +101,7 @@ class PersistenceTest {
                 sha1?.let { HashValue.of(HashAlgorithm.SHA1, it) },
             ).toTypedArray(),
         ),
+        status = status,
     )
 
     private suspend fun importReady(vararg records: DumpRecord, from: DatSourceRef = source) {
@@ -167,6 +171,56 @@ class PersistenceTest {
         assertEquals(original.revision, loaded.revision)
         assertEquals(original.normalizedTitle, loaded.normalizedTitle)
         assertEquals(original.canonicalIdentityKey, loaded.canonicalIdentityKey)
+    }
+
+    @Test
+    fun `a record with no stated size is still found by a size lookup`() = runTest {
+        // A <disk> entry carries hashes but no size. Excluding it from the size
+        // step would make it unfindable through the whole ladder, which is a
+        // missed match caused by absent metadata rather than by evidence.
+        importReady(
+            record("Sized Game (USA)", size = 4096, crc = "11111111", id = "sized"),
+            record("Sizeless Game (USA)", size = null, crc = "22222222", id = "sizeless"),
+            record("Other Game (USA)", size = 8192, crc = "33333333", id = "other"),
+        )
+
+        val found = catalog.findBySize(4096).map { it.id.value }.sorted()
+
+        assertEquals(listOf("sized", "sizeless"), found)
+    }
+
+    @Test
+    fun `a nodump or baddump record never reaches a lookup`() = runTest {
+        // Their hashes are a placeholder or belong to a known-broken dump, so
+        // matching against them attaches a wrong name with full confidence.
+        importReady(
+            record("Good Game (USA)", crc = "aaaaaaaa", id = "good"),
+            record("Bad Game (USA)", crc = "bbbbbbbb", id = "bad", status = DumpStatus.BAD_DUMP),
+            record("Missing Game (USA)", crc = "cccccccc", id = "none", status = DumpStatus.NO_DUMP),
+        )
+
+        assertEquals(listOf("good"), catalog.findBySize(4096).map { it.id.value })
+        assertTrue(catalog.findByHash(HashValue.of(HashAlgorithm.CRC32, "bbbbbbbb")).isEmpty())
+        assertTrue(catalog.findByHash(HashValue.of(HashAlgorithm.CRC32, "cccccccc")).isEmpty())
+        val byTitle = catalog.findByNormalizedTitle(TitleNormalizer.normalize("Missing Game"))
+        assertTrue(
+            byTitle.none { it.id.value == "none" || it.id.value == "bad" },
+            "An unmatchable record must not surface through the textual fallback either: " +
+                byTitle.map { it.id.value },
+        )
+    }
+
+    @Test
+    fun `an unmatchable record is still stored as knowledge`() = runTest {
+        importReady(record("Bad Game (USA)", id = "bad", status = DumpStatus.BAD_DUMP))
+
+        val stored = database
+            .query("SELECT status, matchable FROM dump_record WHERE id = 'bad'") {
+                it.getString(0) to it.getInt(1)
+            }
+            .single()
+
+        assertEquals("BAD_DUMP" to 0, stored)
     }
 
     @Test

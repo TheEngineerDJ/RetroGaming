@@ -69,6 +69,54 @@ object TitleNormalizer {
     }
 
     /**
+     * Candidate comparison keys for one observed title, best guess first.
+     *
+     * Tag stripping cannot be done safely in a single pass: removing a trailing
+     * `-token` rescues `Red Hot Rumble-memorypsp` but would butcher
+     * `Spider-Man`. Producing both forms and letting the caller score each means
+     * an over-eager strip can only ever fail to help - it can never cause a
+     * wrong match, because the unstripped form is always still in the list.
+     *
+     * The tokenizer already removes *recognised* noise suffixes. This is the
+     * generic case, for the site watermarks and scene tags nobody has enumerated.
+     */
+    fun comparisonVariants(title: String): List<NormalizedTitle> {
+        val withoutSite = stripSitePrefix(title)
+        val forms = LinkedHashSet<String>()
+        forms += withoutSite
+        strippedTrailingTag(withoutSite)?.let { forms += it }
+        return forms.map(::normalize).filter { !it.isBlank }.distinct()
+    }
+
+    /**
+     * Drops a trailing `-tag`, the usual shape of a scene group or watermark.
+     *
+     * Returns `null` when the segment does not look like a tag: too long, or
+     * spaced away from the hyphen as in `Ratchet - Deadlocked`, where the hyphen
+     * is punctuation rather than a separator.
+     */
+    private fun strippedTrailingTag(title: String): String? {
+        val hyphen = title.lastIndexOf('-')
+        if (hyphen <= 0 || hyphen == title.lastIndex) return null
+        val tag = title.substring(hyphen + 1)
+        if (tag.isBlank() || tag.length > MAX_TRAILING_TAG_LENGTH) return null
+        if (tag.any { it.isWhitespace() }) return null
+        if (title[hyphen - 1].isWhitespace()) return null
+        return title.substring(0, hyphen)
+    }
+
+    /** Removes a `www.site.com -` style watermark from the front of a name. */
+    private fun stripSitePrefix(title: String): String =
+        sitePrefix.replace(title, "").ifBlank { title }
+
+    private val sitePrefix = Regex(
+        """^\s*(www\.)?[a-z0-9-]+\.(com|net|org|to|me|io|ru|eu)\s*[-_ ]+""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private const val MAX_TRAILING_TAG_LENGTH = 20
+
+    /**
      * Moves an article to the front or drops it entirely.
      *
      * `Legend of Zelda, The` and `The Legend of Zelda` must produce the same

@@ -30,6 +30,7 @@ import com.retrovault.domain.rename.PlanIssue
 import com.retrovault.domain.rename.PlanVerdict
 import com.retrovault.domain.rename.PlannedAction
 import com.retrovault.domain.rename.RenameOperationState
+import com.retrovault.domain.rename.RenameStaging
 import com.retrovault.domain.resolution.ResolutionState
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -472,6 +473,146 @@ class VerticalSliceEndToEndTest {
             "The destination exists and the source is gone, so the rename did take effect",
         )
         assertTrue((journal.findUnfinishedBatches() as Outcome.Success).value.isEmpty())
+    }
+
+
+    @Test
+    fun `a case-only rename is staged through a temporary name and journalled`() = runTest {
+        val bytes = payload(seed = 23)
+        writeDat(
+            "test.dat",
+            """
+            <datafile>
+              <header><name>Test Console</name><version>1</version></header>
+              <game name="Some Game (USA)">
+                <rom name="Some Game (USA).sfc" size="${bytes.size}"
+                     crc="${crc32(bytes)}" sha1="${sha1(bytes)}"/>
+              </game>
+            </datafile>
+            """.trimIndent(),
+        )
+        writeFile("roms/some game (usa).sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+        val (sessionId, _) = scan()
+        val plan =
+            (GenerateRenamePlanUseCase(observations, clock, ids).generate(sessionId) as Outcome.Success).value
+        val result = ExecuteRenamePlanUseCase(validate, LocalRenameExecutor(), journal, clock, ids)
+            .execute(plan)
+
+        val names = root.resolve("roms").listDirectoryEntries().map { it.name }
+        assertEquals(listOf("Some Game (USA).sfc"), names)
+        assertTrue(
+            names.none { it.endsWith(RenameStaging.SUFFIX) },
+            "The staging name must not survive a successful rename",
+        )
+
+        val operation = (result as Outcome.Success).value.batch.operations.single()
+        assertEquals("Some Game (USA).sfc" + RenameStaging.SUFFIX, operation.intermediateName)
+        assertEquals(RenameOperationState.COMPLETED, operation.state)
+    }
+
+    @Test
+    fun `files that shift along a chain of names are renamed in a safe order`() {
+        // "Beta Game (USA).sfc" actually holds Alpha's bytes, so it has to
+        // vacate that name before the file that genuinely is Beta can take it.
+        // Executed in plan order this collides; executed in dependency order it
+        // succeeds.
+        runTest {
+            val alpha = payload(seed = 31)
+            val beta = payload(seed = 32)
+            writeDat(
+                "test.dat",
+                """
+                <datafile>
+                  <header><name>Test Console</name><version>1</version></header>
+                  <game name="Alpha Game (USA)">
+                    <rom name="Alpha Game (USA).sfc" size="${alpha.size}"
+                         crc="${crc32(alpha)}" sha1="${sha1(alpha)}"/>
+                  </game>
+                  <game name="Beta Game (USA)">
+                    <rom name="Beta Game (USA).sfc" size="${beta.size}"
+                         crc="${crc32(beta)}" sha1="${sha1(beta)}"/>
+                  </game>
+                </datafile>
+                """.trimIndent(),
+            )
+            writeFile("roms/Beta Game (USA).sfc", alpha)
+            writeFile("roms/mystery.sfc", beta)
+            importDat(root.resolve("test.dat"))
+
+            val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+            val (sessionId, _) = scan()
+            val plan =
+                (GenerateRenamePlanUseCase(observations, clock, ids).generate(sessionId) as Outcome.Success)
+                    .value
+            val preview = PreviewRenamePlanUseCase(validate).preview(plan)
+
+            assertEquals(
+                PlanVerdict.EXECUTABLE,
+                preview.validation.verdict,
+                "A name held by another file in the same batch is an ordering problem, not a collision: " +
+                    preview.validation.issues.map { it.message },
+            )
+            assertEquals(
+                listOf("Beta Game (USA).sfc", "mystery.sfc"),
+                preview.validation.executable.map { it.currentName },
+                "The misnamed file must free the name before the real Beta takes it",
+            )
+
+            val result = ExecuteRenamePlanUseCase(validate, LocalRenameExecutor(), journal, clock, ids)
+                .execute(plan)
+
+            assertTrue(
+                (result as Outcome.Success).value.summary.isFullySuccessful,
+                result.value.summary.toString(),
+            )
+            assertEquals(
+                listOf("Alpha Game (USA).sfc", "Beta Game (USA).sfc"),
+                root.resolve("roms").listDirectoryEntries().map { it.name }.sorted(),
+            )
+            assertEquals(
+                alpha.toList(),
+                root.resolve("roms/Alpha Game (USA).sfc").readBytes().toList(),
+                "Each file must end up under the name its own bytes earned",
+            )
+        }
+    }
+
+    @Test
+    fun `an archive carrying macos bookkeeping is still identified by its rom`() = runTest {
+        val bytes = payload(seed = 41)
+        writeDat(
+            "test.dat",
+            """
+            <datafile>
+              <header><name>Test Console</name><version>1</version></header>
+              <game name="Packed Game (USA)">
+                <rom name="Packed Game (USA).sfc" size="${bytes.size}"
+                     crc="${crc32(bytes)}" sha1="${sha1(bytes)}"/>
+              </game>
+            </datafile>
+            """.trimIndent(),
+        )
+        writeZip(
+            "roms/packed.zip",
+            mapOf(
+                "__MACOSX/._packed.sfc" to "resource fork".toByteArray(),
+                "packed.sfc" to bytes,
+                ".DS_Store" to "finder junk".toByteArray(),
+            ),
+        )
+        importDat(root.resolve("test.dat"))
+
+        val (_, events) = scan()
+        val resolution = resolutionsByName(events).getValue("packed.zip")
+
+        assertEquals(
+            ResolutionState.EXACT_HASH,
+            resolution.state,
+            "Archiver bookkeeping must not turn a single-ROM archive into an ambiguous one",
+        )
     }
 
     private class SimulatedCrash : RuntimeException("simulated crash after the filesystem call")

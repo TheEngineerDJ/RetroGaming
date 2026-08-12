@@ -67,4 +67,52 @@ class TitleSimilarityTest {
         assertEquals(forward, backward)
         assertEquals(forward, compare("Street Fighter II Turbo", "Street Fighter II"))
     }
+
+    @Test
+    fun `a single character typo is still recognised`() {
+        // Token overlap scores this at zero: no word matches. Edit distance is
+        // what carries it, which is why both measures are combined.
+        val comparison = TitleSimilarity.compare(
+            TitleNormalizer.normalize("Castlevania"),
+            TitleNormalizer.normalize("Castlevanla"),
+        )
+
+        assertIs<TitleComparison.Similar>(comparison)
+    }
+
+    @Test
+    fun `edit distance never overrides a numbering conflict`() {
+        // "Final Fantasy VII" and "Final Fantasy VIII" are one character apart
+        // and are different games.
+        val comparison = TitleSimilarity.compare(
+            TitleNormalizer.normalize("Final Fantasy VII"),
+            TitleNormalizer.normalize("Final Fantasy VIII"),
+        )
+
+        assertIs<TitleComparison.Conflicting>(comparison)
+    }
+
+    @Test
+    fun `edit distance gives up rather than scoring a distant pair`() {
+        val comparison = TitleSimilarity.compare(
+            TitleNormalizer.normalize("Castlevania"),
+            TitleNormalizer.normalize("Contra"),
+        )
+
+        assertEquals(TitleComparison.Unrelated, comparison)
+    }
+
+    @Test
+    fun `the bounded edit distance agrees with the exact one inside its budget`() {
+        assertEquals(0, TitleSimilarity.levenshtein("abcdef", "abcdef", 3))
+        assertEquals(1, TitleSimilarity.levenshtein("abcdef", "abcdff", 3))
+        assertEquals(3, TitleSimilarity.levenshtein("abcdef", "abc", 3))
+    }
+
+    @Test
+    fun `the bounded edit distance stops once the budget is exceeded`() {
+        // It reports "further than the budget" rather than the true distance,
+        // which is all the caller needs and is what keeps the fallback cheap.
+        assertTrue(TitleSimilarity.levenshtein("abcdefgh", "zzzzzzzz", 2) > 2)
+    }
 }

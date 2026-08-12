@@ -92,7 +92,7 @@ class LogiqxDatParserTest {
             <!DOCTYPE datafile [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
             <datafile>
               <game name="Evil &xxe; Game">
-                <rom name="evil.sfc" size="1"/>
+                <rom name="evil.sfc" size="1" crc="00000001"/>
               </game>
             </datafile>
         """.trimIndent()
@@ -116,7 +116,7 @@ class LogiqxDatParserTest {
             ]>
             <datafile>
               <game name="Bomb &c;">
-                <rom name="bomb.sfc" size="1"/>
+                <rom name="bomb.sfc" size="1" crc="00000002"/>
               </game>
             </datafile>
         """.trimIndent()
@@ -131,7 +131,7 @@ class LogiqxDatParserTest {
         val xml = """
             <datafile>
               <game name="Tom &amp; Jerry &#65;">
-                <rom name="tj.sfc" size="1"/>
+                <rom name="tj.sfc" size="1" crc="00000003"/>
               </game>
             </datafile>
         """.trimIndent()
@@ -140,42 +140,82 @@ class LogiqxDatParserTest {
     }
 
     @Test
-    fun `a rom with no size is reported as malformed and the file continues`() {
+    fun `a rom with no size keeps its hashes and reports an unknown size`() {
         val xml = """
             <datafile>
-              <game name="Broken"><rom name="broken.sfc"/></game>
-              <game name="Fine (USA)"><rom name="fine.sfc" size="10"/></game>
+              <game name="Sizeless (USA)"><rom name="sizeless.sfc" crc="00000004"/></game>
+              <game name="Fine (USA)"><rom name="fine.sfc" size="10" crc="00000005"/></game>
+            </datafile>
+        """.trimIndent()
+
+        val (outcome, _) = parse(xml)
+
+        assertEquals(2, outcome.report.entries)
+        assertEquals(0, outcome.report.malformed)
+        assertNull(entries(xml).first().size, "An absent size must be unknown, not a parse failure")
+        assertEquals(10L, entries(xml).last().size)
+    }
+
+    @Test
+    fun `a disk element is catalogued like a rom`() {
+        val xml = """
+            <datafile>
+              <game name="Arcade Thing (USA)">
+                <disk name="arcadething" sha1="${"3".repeat(40)}"/>
+              </game>
+            </datafile>
+        """.trimIndent()
+
+        val entry = entries(xml).single()
+
+        assertEquals("arcadething", entry.romName)
+        assertNull(entry.size, "A <disk> states no size")
+        assertEquals("3".repeat(40), entry.hashes[HashAlgorithm.SHA1]?.hex)
+    }
+
+    @Test
+    fun `an unreadable size does not discard the hashes that identify the rom`() {
+        val xml = """<datafile><game name="X (USA)"><rom name="x.sfc" size="lots" crc="00000006"/></game></datafile>"""
+
+        val entry = entries(xml).single()
+
+        assertNull(entry.size)
+        assertEquals("00000006", entry.hashes[HashAlgorithm.CRC32]?.hex)
+    }
+
+    @Test
+    fun `a rom with no usable hash is skipped rather than indexed on size alone`() {
+        val xml = """
+            <datafile>
+              <game name="Hashless (USA)"><rom name="hashless.sfc" size="10"/></game>
+              <game name="Unreadable (USA)"><rom name="bad.sfc" size="10" crc="not-hex"/></game>
             </datafile>
         """.trimIndent()
 
         val (outcome, events) = parse(xml)
 
-        assertEquals(1, outcome.report.malformed)
-        assertEquals(1, outcome.report.entries)
-        val malformed = events.filterIsInstance<DatParseEvent.MalformedRecord>().single()
-        assertEquals("Broken", malformed.gameName)
-        assertTrue(malformed.reason.contains("size"))
+        assertEquals(0, outcome.report.entries)
+        assertEquals(2, outcome.report.skipped)
+        assertTrue(events.filterIsInstance<DatParseEvent.SkippedRecord>().all { it.reason.contains("hash") })
     }
 
     @Test
-    fun `a non-numeric size is reported as malformed`() {
-        val xml = """<datafile><game name="X"><rom name="x.sfc" size="lots"/></game></datafile>"""
+    fun `the crc32 attribute spelling is accepted`() {
+        val xml = """<datafile><game name="X (USA)"><rom name="x.sfc" size="10" crc32="AB12CD34"/></game></datafile>"""
 
-        val malformed = parse(xml).second.filterIsInstance<DatParseEvent.MalformedRecord>().single()
-
-        assertTrue(malformed.reason.contains("not a number"))
+        assertEquals("ab12cd34", entries(xml).single().hashes[HashAlgorithm.CRC32]?.hex)
     }
 
     @Test
     fun `a rom with no name is reported as malformed`() {
-        val xml = """<datafile><game name="X"><rom size="10"/></game></datafile>"""
+        val xml = """<datafile><game name="X"><rom size="10" crc="00000007"/></game></datafile>"""
 
         assertEquals(1, parse(xml).first.report.malformed)
     }
 
     @Test
     fun `a set with no name is reported as malformed`() {
-        val xml = """<datafile><game><rom name="x.sfc" size="10"/></game></datafile>"""
+        val xml = """<datafile><game><rom name="x.sfc" size="10" crc="00000008"/></game></datafile>"""
 
         assertEquals(1, parse(xml).first.report.malformed)
     }
@@ -196,8 +236,8 @@ class LogiqxDatParserTest {
         val xml = """
             <datafile>
               <game name="Dupes">
-                <rom name="same.sfc" size="10"/>
-                <rom name="SAME.SFC" size="20"/>
+                <rom name="same.sfc" size="10" crc="00000009"/>
+                <rom name="SAME.SFC" size="20" crc="0000000a"/>
               </game>
             </datafile>
         """.trimIndent()
@@ -210,12 +250,14 @@ class LogiqxDatParserTest {
 
     @Test
     fun `a malformed hash is dropped without losing the entry`() {
-        val xml = """<datafile><game name="X (USA)"><rom name="x.sfc" size="10" crc="not-hex"/></game></datafile>"""
+        val xml =
+            """<datafile><game name="X (USA)"><rom name="x.sfc" size="10" crc="not-hex" sha1="${"4".repeat(40)}"/></game></datafile>"""
 
         val entry = entries(xml).single()
 
         assertEquals(1, parse(xml).first.report.entries)
         assertNull(entry.hashes[HashAlgorithm.CRC32])
+        assertEquals("4".repeat(40), entry.hashes[HashAlgorithm.SHA1]?.hex)
     }
 
     @Test
@@ -234,7 +276,7 @@ class LogiqxDatParserTest {
 
     @Test
     fun `mame style machine elements are supported`() {
-        val xml = """<datafile><machine name="X (USA)"><rom name="x.rom" size="10"/></machine></datafile>"""
+        val xml = """<datafile><machine name="X (USA)"><rom name="x.rom" size="10" crc="0000000b"/></machine></datafile>"""
 
         assertEquals(1, entries(xml).size)
     }
@@ -243,10 +285,10 @@ class LogiqxDatParserTest {
     fun `dump status flags are read`() {
         val xml = """
             <datafile>
-              <game name="Bad (USA)"><rom name="bad.sfc" size="1" status="baddump"/></game>
-              <game name="None (USA)"><rom name="none.sfc" size="1" status="nodump"/></game>
-              <game name="Ok (USA)"><rom name="ok.sfc" size="1" status="verified"/></game>
-              <game name="Odd (USA)"><rom name="odd.sfc" size="1" status="something-new"/></game>
+              <game name="Bad (USA)"><rom name="bad.sfc" size="1" crc="0000000c" status="baddump"/></game>
+              <game name="None (USA)"><rom name="none.sfc" size="1" crc="0000000d" status="nodump"/></game>
+              <game name="Ok (USA)"><rom name="ok.sfc" size="1" crc="0000000e" status="verified"/></game>
+              <game name="Odd (USA)"><rom name="odd.sfc" size="1" crc="0000000f" status="something-new"/></game>
             </datafile>
         """.trimIndent()
 
@@ -260,7 +302,7 @@ class LogiqxDatParserTest {
     fun `truncated xml aborts but keeps everything already parsed`() {
         val xml = """
             <datafile>
-              <game name="First (USA)"><rom name="first.sfc" size="10"/></game>
+              <game name="First (USA)"><rom name="first.sfc" size="10" crc="00000010"/></game>
               <game name="Second (USA)"><rom name="second.sfc" siz
         """.trimIndent()
 
@@ -273,7 +315,7 @@ class LogiqxDatParserTest {
 
     @Test
     fun `mismatched tags abort as data, not as a crash`() {
-        val xml = """<datafile><game name="X"><rom name="x.sfc" size="1"/></wrong></datafile>"""
+        val xml = """<datafile><game name="X"><rom name="x.sfc" size="1" crc="00000011"/></wrong></datafile>"""
 
         assertIs<DatParseOutcome.Aborted>(parse(xml).first)
     }
@@ -305,7 +347,7 @@ class LogiqxDatParserTest {
             <?xml version="1.0"?>
             <!-- a comment with <game name="fake"> inside it -->
             <datafile>
-              <game name="Real (USA)"><rom name="real.sfc" size="1"/></game>
+              <game name="Real (USA)"><rom name="real.sfc" size="1" crc="00000012"/></game>
             </datafile>
         """.trimIndent()
 
@@ -317,7 +359,7 @@ class LogiqxDatParserTest {
         val xml = """
             <datafile>
               <header><name><![CDATA[Platform & Friends]]></name></header>
-              <game name="X (USA)"><rom name="x.sfc" size="1"/></game>
+              <game name="X (USA)"><rom name="x.sfc" size="1" crc="00000013"/></game>
             </datafile>
         """.trimIndent()
 

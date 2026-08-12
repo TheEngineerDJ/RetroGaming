@@ -82,7 +82,11 @@ class SafDirectoryWalker(
             )
             return@flow
         }
-        walkDirectory(treeUri, rootDocumentId, relativePath = "", depth = 0)
+        // A provider may expose the same document under two parents, and some
+        // expose a folder inside itself. Without this guard the walk would
+        // recurse until the depth limit and report the same files repeatedly,
+        // producing a rename plan with duplicate entries for one file.
+        walkDirectory(treeUri, rootDocumentId, relativePath = "", depth = 0, visited = hashSetOf(rootDocumentId))
     }
         .buffer(capacity = 64)
         .flowOn(dispatcher)
@@ -92,6 +96,7 @@ class SafDirectoryWalker(
         documentId: String,
         relativePath: String,
         depth: Int,
+        visited: MutableSet<String>,
     ) {
         if (depth > maxDepth) {
             emit(
@@ -134,12 +139,18 @@ class SafDirectoryWalker(
         // closes, so a deep tree never holds one open cursor per level.
         val directories = mutableListOf<Pair<String, String>>()
         cursor.use { rows ->
+            // DOCUMENT_ID, DISPLAY_NAME and MIME_TYPE are required of every
+            // DocumentsProvider, and without MIME_TYPE a folder cannot be told
+            // from a file, so their absence is fatal for this directory.
+            // SIZE and LAST_MODIFIED are optional in the contract and several
+            // third-party providers omit them. They are corroborating
+            // metadata, not identity, so an absent column reads as unknown
+            // rather than abandoning an otherwise readable folder.
             val idColumn = rows.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
             val nameColumn = rows.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
             val mimeColumn = rows.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
-            val sizeColumn = rows.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
-            val modifiedColumn =
-                rows.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+            val sizeColumn = rows.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            val modifiedColumn = rows.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
 
             while (rows.moveToNext()) {
                 currentCoroutineContext().ensureActive()
@@ -173,19 +184,22 @@ class SafDirectoryWalker(
 
         for ((childId, childPath) in directories) {
             currentCoroutineContext().ensureActive()
+            if (!visited.add(childId)) continue
             emit(
                 WalkEvent.DirectoryEntered(
                     DocumentsContract.buildDocumentUriUsingTree(treeUri, childId).toStorageRef(),
                     childPath,
                 ),
             )
-            walkDirectory(treeUri, childId, childPath, depth + 1)
+            walkDirectory(treeUri, childId, childPath, depth + 1, visited)
         }
     }
 
-    private fun Cursor.longOrZero(column: Int): Long = if (isNull(column)) 0L else getLong(column)
+    private fun Cursor.longOrZero(column: Int): Long =
+        if (column < 0 || isNull(column)) 0L else getLong(column)
 
-    private fun Cursor.longOrNull(column: Int): Long? = if (isNull(column)) null else getLong(column)
+    private fun Cursor.longOrNull(column: Int): Long? =
+        if (column < 0 || isNull(column)) null else getLong(column)
 
     private companion object {
         val PROJECTION = arrayOf(
@@ -280,13 +294,30 @@ class SafContentSource(
                         ArtifactState(ref, exists = false, filename = null, size = null, writable = false),
                     )
                 }
-                val flags = cursor.getLong(2)
+                // Column positions are read from the returned cursor rather
+                // than assumed from the projection: a provider may return
+                // fewer columns than were asked for.
+                val nameColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val sizeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                val flagsColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_FLAGS)
+                // FLAGS is optional. When it is absent, rename support is
+                // unknown rather than denied: treating unknown as "cannot
+                // rename" would make the app inert on such a provider, while
+                // treating it as "may rename" costs at most one typed,
+                // journalled rename failure that the user can see and retry.
+                val flags = if (flagsColumn < 0) {
+                    DocumentsContract.Document.FLAG_SUPPORTS_RENAME.toLong()
+                } else if (cursor.isNull(flagsColumn)) {
+                    0L
+                } else {
+                    cursor.getLong(flagsColumn)
+                }
                 Outcome.success(
                     ArtifactState(
                         storageRef = ref,
                         exists = true,
-                        filename = cursor.getString(0),
-                        size = if (cursor.isNull(1)) null else cursor.getLong(1),
+                        filename = if (nameColumn < 0) null else cursor.getString(nameColumn),
+                        size = if (sizeColumn < 0 || cursor.isNull(sizeColumn)) null else cursor.getLong(sizeColumn),
                         // Rename support is a per-document capability, not a
                         // property of the volume, so it is read per file.
                         writable = flags and DocumentsContract.Document.FLAG_SUPPORTS_RENAME.toLong() != 0L,

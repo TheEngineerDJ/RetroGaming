@@ -57,7 +57,8 @@ class LogiqxDatReader(
         }
 
         try {
-            stream.use { bytes ->
+            stream.buffered().use { bytes ->
+                classifyFormat(bytes)?.let { return@withContext Outcome.failure(it) }
                 InputStreamReader(bytes, Charsets.UTF_8).buffered().use { reader ->
                     Outcome.success(parseInto(reader, onEvent))
                 }
@@ -66,6 +67,42 @@ class LogiqxDatReader(
             Outcome.failure(RetroVaultFailure.InvalidDat(failure.message ?: "the file could not be read"))
         }
     }
+
+    /**
+     * Names the most common wrong-file mistake before the XML scanner does.
+     *
+     * A ClrMamePro DAT is plain text, so handing it to an XML parser produces
+     * "unexpected character at offset 0", which tells the user nothing about
+     * what to do next. Peeking at the first bytes turns that into an
+     * instruction (UX_SPEC.md section 12: a failure must say what happened and
+     * what the user can do).
+     *
+     * @return the failure to report, or `null` when the file may be XML.
+     */
+    private fun classifyFormat(input: InputStream): RetroVaultFailure? {
+        input.mark(PROBE_BYTES)
+        val probe = ByteArray(PROBE_BYTES)
+        val read = input.readNBytes(probe, 0, PROBE_BYTES)
+        input.reset()
+
+        if (read <= 0) return RetroVaultFailure.InvalidDat("the file is empty")
+        // A UTF-16 document is not single-byte text; let the parser judge it.
+        if (probe.startsWith(UTF16_LE_BOM, read) || probe.startsWith(UTF16_BE_BOM, read)) return null
+        val offset = if (probe.startsWith(UTF8_BOM, read)) UTF8_BOM.size else 0
+
+        val head = String(probe, offset, read - offset, Charsets.ISO_8859_1).trimStart()
+        if (head.startsWith("<")) return null
+        if (head.startsWith("clrmamepro", ignoreCase = true) || head.startsWith("game (")) {
+            return RetroVaultFailure.InvalidDat(
+                "this is a ClrMamePro-format DAT; RetroVault reads the XML (Logiqx) form, " +
+                    "which No-Intro and Redump also publish",
+            )
+        }
+        return RetroVaultFailure.InvalidDat("the file is not an XML DAT")
+    }
+
+    private fun ByteArray.startsWith(prefix: ByteArray, available: Int): Boolean =
+        available >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
 
     private suspend fun parseInto(reader: Reader, onEvent: suspend (DatReadEvent) -> Unit): DatReadReport {
         val context = currentCoroutineContext()
@@ -117,5 +154,13 @@ class LogiqxDatReader(
         is DatParseEvent.MalformedRecord -> DatReadEvent.Malformed(gameName, romName, reason)
 
         is DatParseEvent.SkippedRecord -> DatReadEvent.Skipped(gameName, reason)
+    }
+
+    private companion object {
+        const val PROBE_BYTES = 64
+
+        val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+        val UTF16_LE_BOM = byteArrayOf(0xFF.toByte(), 0xFE.toByte())
+        val UTF16_BE_BOM = byteArrayOf(0xFE.toByte(), 0xFF.toByte())
     }
 }

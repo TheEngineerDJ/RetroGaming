@@ -70,6 +70,20 @@ sealed interface ResolutionStage {
 data class ResolverConfig(
     val similarityThreshold: Int = TitleSimilarity.SIMILARITY_THRESHOLD,
     val ambiguityMargin: Int = TitleSimilarity.AMBIGUITY_MARGIN,
+    /**
+     * Whether to compute MD5 and SHA1 in the same pass as CRC32.
+     *
+     * The identification ladder escalates from CRC32 to a cryptographic hash
+     * whenever the catalogue offers one, and No-Intro and Redump records
+     * essentially always do. Asking for CRC32 alone therefore means reading the
+     * file twice; over a storage provider that is the dominant cost of a scan,
+     * far outweighing the extra digests computed for the minority of files that
+     * never escalate (Constitution section 249).
+     *
+     * The evidence produced is identical either way: this changes when bytes
+     * are read, never what is concluded from them.
+     */
+    val computeStrongHashesUpFront: Boolean = true,
 )
 
 internal enum class Phase {
@@ -241,8 +255,13 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
         }
         val ref = session.observation.identityBearingRef()
             ?: return startTitleFallback(session)
+        val requested = if (config.computeStrongHashesUpFront) {
+            setOf(HashAlgorithm.CRC32, HashAlgorithm.MD5, HashAlgorithm.SHA1)
+        } else {
+            setOf(HashAlgorithm.CRC32)
+        }
         return ResolutionStage.AwaitingEvidence(
-            EvidenceRequest.ComputeHashes(ref, setOf(HashAlgorithm.CRC32)),
+            EvidenceRequest.ComputeHashes(ref, requested),
             session.next(phase = Phase.CRC_COMPUTE),
         )
     }
@@ -253,7 +272,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
                 val crc = response.hashes[HashAlgorithm.CRC32]
                 val updated = session.next(
                     hashes = merge(session.hashes, response.hashes),
-                    computed = session.computed + HashAlgorithm.CRC32,
+                    computed = session.computed + response.hashes.algorithms,
                 )
                 if (crc == null) {
                     startTitleFallback(updated)
@@ -283,12 +302,12 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
             return startTitleFallback(withSources)
         }
 
-        val sizeAgreeing = records.filter { it.size == observedSize }
+        val sizeAgreeing = records.filter { it.size == null || it.size == observedSize }
         if (sizeAgreeing.isEmpty()) {
             // CRC32 collided with a record of a different length. That is
             // exactly the case CRC32 is too weak to settle, so it produces a
             // contradiction rather than a match.
-            val expected = records.first().size
+            val expected = records.first().size ?: -1
             return startTitleFallback(
                 withSources.next(
                     strictContradictions = withSources.strictContradictions + Evidence.contradicting(
@@ -411,7 +430,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
             )
         }
 
-        val sizeAgreeing = agreeing.filter { it.size == observedSize }
+        val sizeAgreeing = agreeing.filter { it.size == null || it.size == observedSize }
         if (sizeAgreeing.isEmpty()) {
             return complete(
                 withSources,
@@ -421,7 +440,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
                         record = record,
                         contradicting = listOf(
                             Evidence.contradicting(
-                                MatchSignal.SizeMismatch(observedSize ?: -1, record.size),
+                                MatchSignal.SizeMismatch(observedSize ?: -1, record.size ?: -1),
                                 EvidenceStrength.STRONG,
                                 "The cryptographic hash matches this record but the catalogued size does not.",
                                 source = record.source,
@@ -615,12 +634,28 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
             }
         }
 
-        val state = if (qualifiesAsStrongMetadata(best, parsed, observedSize)) {
+        val track = pickTrack(best, eligible, observation.extension)
+            ?: return complete(
+                withSources,
+                ResolutionState.AMBIGUOUS,
+                candidates = allRanked,
+                pipelineEvidence = listOf(
+                    Evidence.informational(
+                        MatchSignal.ArchiveHasMultipleArtifacts(
+                            eligible.count { it.identityKey == best.identityKey },
+                        ),
+                        "This release is made up of several files and the extension does not say " +
+                            "which one this is, so RetroVault will not guess.",
+                    ),
+                ),
+            )
+
+        val state = if (qualifiesAsStrongMetadata(track, parsed, observedSize)) {
             ResolutionState.STRONG_METADATA_MATCH
         } else {
             ResolutionState.FUZZY_MATCH
         }
-        val merged = mergeCorroborating(best, eligible)
+        val merged = mergeCorroborating(track, eligible)
         return complete(
             withSources,
             state,
@@ -641,7 +676,13 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
         record: DumpRecord,
         observedSize: Long?,
     ): Candidate? {
-        val comparison = TitleSimilarity.compare(parsed.normalizedTitle, record.normalizedTitle)
+        // Each variant is a different guess at where the title ends and the
+        // noise begins. Scoring all of them and keeping the best means an
+        // over-eager strip can only fail to help, never mislead.
+        val comparison = TitleNormalizer.comparisonVariants(parsed.titleText)
+            .map { variant -> TitleSimilarity.compare(variant, record.normalizedTitle) }
+            .reduceOrNull(::strongerComparison)
+            ?: TitleSimilarity.compare(parsed.normalizedTitle, record.normalizedTitle)
         val supporting = mutableListOf<Evidence>()
         val contradicting = mutableListOf<Evidence>()
 
@@ -677,19 +718,20 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
         penalty += compareRevision(parsed.revision, record, contradicting)
         penalty += compareDisc(parsed.discNumber, record, contradicting)
 
-        if (observedSize != null) {
-            if (record.size == observedSize) {
+        val catalogueSize = record.size
+        if (observedSize != null && catalogueSize != null) {
+            if (catalogueSize == observedSize) {
                 supporting += Evidence.supporting(
                     MatchSignal.SizeExact,
                     EvidenceStrength.MODERATE,
                     "File size matches the catalogued size exactly.",
                     source = record.source,
                 )
-            } else if (record.size > 0) {
+            } else if (catalogueSize > 0) {
                 contradicting += Evidence.contradicting(
-                    MatchSignal.SizeMismatch(observedSize, record.size),
+                    MatchSignal.SizeMismatch(observedSize, catalogueSize),
                     EvidenceStrength.STRONG,
-                    "The file is $observedSize bytes but the catalogued dump is ${record.size} bytes, " +
+                    "The file is $observedSize bytes but the catalogued dump is $catalogueSize bytes, " +
                         "so this file is not that dump. It may be a modified, trimmed or headered copy.",
                     source = record.source,
                 )
@@ -796,13 +838,52 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
         observedSize: Long?,
     ): Boolean =
         candidate.record.hashes.isEmpty &&
-            candidate.record.size > 0 &&
+            candidate.record.size != null &&
             candidate.record.size == observedSize &&
             parsed.normalizedTitle.key == candidate.record.normalizedTitle.key
+
+    /**
+     * Keeps the more useful of two comparisons.
+     *
+     * A conflict is never overridden: if one variant says the sequence numbers
+     * differ, stripping more text off the name must not be allowed to hide that.
+     */
+    private fun strongerComparison(left: TitleComparison, right: TitleComparison): TitleComparison = when {
+        left is TitleComparison.Conflicting -> left
+        right is TitleComparison.Conflicting -> right
+        left is TitleComparison.Exact || right is TitleComparison.Exact -> TitleComparison.Exact
+        left is TitleComparison.Similar && right is TitleComparison.Similar ->
+            if (left.score >= right.score) left else right
+        left is TitleComparison.Similar -> left
+        right is TitleComparison.Similar -> right
+        else -> TitleComparison.Unrelated
+    }
 
     private fun mergeCorroborating(best: Candidate, all: List<Candidate>): Candidate {
         val sameIdentity = all.filter { it.identityKey == best.identityKey && it.record.id != best.record.id }
         return best.copy(corroborating = sameIdentity.map { it.record })
+    }
+
+    /**
+     * Picks which file of a multi-file release a local file corresponds to.
+     *
+     * A Redump disc release is several `<rom>` entries - one per track, plus a
+     * cue sheet - that all share a title. A textual match identifies the
+     * release but says nothing about which track is in front of us, so the
+     * extension has to settle it. When it cannot, the title is unusable:
+     * renaming a `.bin` to the cue sheet's name would be worse than leaving it
+     * alone.
+     *
+     * @return the single applicable record, or `null` when the release cannot
+     * be narrowed to one file.
+     */
+    private fun pickTrack(candidate: Candidate, all: List<Candidate>, extension: String?): Candidate? {
+        val siblings = all.filter { it.identityKey == candidate.identityKey }
+        val tracks = siblings.distinctBy { it.record.romName }
+        if (tracks.size <= 1) return candidate
+        if (extension == null) return null
+        val byExtension = tracks.filter { it.record.romExtension.equals(extension, ignoreCase = true) }
+        return byExtension.singleOrNull()
     }
 
     // -----------------------------------------------------------------------

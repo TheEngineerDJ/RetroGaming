@@ -131,7 +131,17 @@ object FilenameSanitizer {
         if (stem.toByteArray(Charsets.UTF_8).size <= budget) return stem
         var result = stem
         while (result.isNotEmpty() && result.toByteArray(Charsets.UTF_8).size > budget) {
-            result = result.dropLast(1)
+            // Drop a whole code point, not a UTF-16 code unit. Cutting between a
+            // surrogate pair leaves an unpaired half, which encodes to a
+            // replacement character and silently corrupts the name.
+            val drop = if (result.length >= 2 && result[result.lastIndex - 1].isHighSurrogate() &&
+                result[result.lastIndex].isLowSurrogate()
+            ) {
+                2
+            } else {
+                1
+            }
+            result = result.dropLast(drop)
         }
         return result.trimEnd('.', ' ')
     }

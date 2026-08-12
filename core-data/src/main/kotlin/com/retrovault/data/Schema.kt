@@ -13,14 +13,23 @@ package com.retrovault.data
  */
 object Schema {
 
-    const val CURRENT_VERSION: Int = 1
+    const val CURRENT_VERSION: Int = 2
 
     /**
      * Applies every migration needed to bring [database] up to date.
      *
      * @return the version the database was on before this call.
      */
-    fun migrate(database: SqlDatabase): Int = database.transaction {
+    fun migrate(database: SqlDatabase): Int = migrateTo(database, CURRENT_VERSION)
+
+    /**
+     * Applies migrations up to [targetVersion] only.
+     *
+     * Exists so that an upgrade can be tested from the schema version users
+     * actually have, rather than only ever from an empty database. A migration
+     * that is only exercised on a fresh install is a migration nobody has run.
+     */
+    internal fun migrateTo(database: SqlDatabase, targetVersion: Int): Int = database.transaction {
         // Foreign-key enforcement is switched on by each binding when it opens
         // the connection, not here. `PRAGMA foreign_keys` is a no-op inside a
         // transaction, and Android's execSQL rejects some PRAGMA statements
@@ -34,7 +43,7 @@ object Schema {
             .firstOrNull() ?: 0
 
         migrations
-            .filterKeys { it > current }
+            .filterKeys { it > current && it <= targetVersion }
             .toSortedMap()
             .forEach { (version, statements) ->
                 statements.forEach(database::execute)
@@ -51,7 +60,7 @@ object Schema {
             .query("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1") { it.getInt(0) }
             .firstOrNull() ?: 0
 
-    private val migrations: Map<Int, List<String>> = mapOf(1 to version1())
+    private val migrations: Map<Int, List<String>> = mapOf(1 to version1(), 2 to version2())
 
     private fun version1(): List<String> = listOf(
         // --- Imported datasets -------------------------------------------
@@ -264,5 +273,112 @@ object Schema {
 
         "CREATE INDEX idx_rename_operation_batch ON rename_operation(batch_id)",
         "CREATE INDEX idx_rename_operation_state ON rename_operation(state)",
+    )
+
+    /**
+     * Records an unknown size as unknown, and marks records unfit for matching.
+     *
+     * Two changes, both to `dump_record`:
+     *
+     * - `size` becomes nullable. Some DATs state no size (`<disk>` entries in
+     *   particular). Version 1 forced the importer to discard those records
+     *   along with every hash they carried; now the size is simply absent and
+     *   produces no evidence either way.
+     * - `matchable` records whether the entry may identify a local file. A
+     *   `nodump` entry carries a placeholder hash and a `baddump` entry carries
+     *   the hash of a known-broken dump, so matching against either asserts a
+     *   wrong identity confidently. They stay stored - Constitution section 199
+     *   keeps imperfect artifacts as evidence - but lookups skip them.
+     *
+     * SQLite cannot relax a NOT NULL constraint in place, so the table is
+     * rebuilt. Every existing row is copied with `matchable` derived from the
+     * status already recorded, and no user state is dropped
+     * (DATABASE.md section 15).
+     *
+     * The dependent tables are rebuilt in the same pass, and that ordering is
+     * load-bearing. With foreign keys enforced, `DROP TABLE dump_record`
+     * performs an implicit delete that fires `ON DELETE CASCADE` and would
+     * empty `dump_hash` and `dump_title_token` - silently destroying the entire
+     * lookup index. Copying the children onto the new parent *first* means
+     * nothing references the old table by the time it is dropped. The final
+     * renames restore the original names; SQLite rewrites the children's
+     * foreign-key clauses to follow the parent's rename.
+     */
+    private fun version2(): List<String> = listOf(
+        """
+        CREATE TABLE dump_record_v2 (
+            id TEXT PRIMARY KEY NOT NULL,
+            source_id TEXT NOT NULL REFERENCES dat_source(id) ON DELETE CASCADE,
+            set_name TEXT NOT NULL,
+            rom_name TEXT NOT NULL,
+            size INTEGER,
+            platform TEXT NOT NULL,
+            canonical_title TEXT NOT NULL,
+            normalized_title TEXT NOT NULL,
+            revision TEXT,
+            version TEXT,
+            disc_number INTEGER,
+            status TEXT NOT NULL,
+            external_id TEXT,
+            regions TEXT NOT NULL,
+            languages TEXT NOT NULL,
+            flags TEXT NOT NULL,
+            matchable INTEGER NOT NULL DEFAULT 1
+        )
+        """.trimIndent(),
+
+        """
+        INSERT INTO dump_record_v2 (id, source_id, set_name, rom_name, size, platform,
+            canonical_title, normalized_title, revision, version, disc_number, status,
+            external_id, regions, languages, flags, matchable)
+        SELECT id, source_id, set_name, rom_name, size, platform,
+            canonical_title, normalized_title, revision, version, disc_number, status,
+            external_id, regions, languages, flags,
+            CASE WHEN status IN ('BAD_DUMP', 'NO_DUMP') THEN 0 ELSE 1 END
+        FROM dump_record
+        """.trimIndent(),
+
+        """
+        CREATE TABLE dump_hash_v2 (
+            record_id TEXT NOT NULL REFERENCES dump_record_v2(id) ON DELETE CASCADE,
+            algorithm TEXT NOT NULL,
+            digest TEXT NOT NULL,
+            PRIMARY KEY (record_id, algorithm)
+        )
+        """.trimIndent(),
+
+        "INSERT INTO dump_hash_v2 (record_id, algorithm, digest) " +
+            "SELECT record_id, algorithm, digest FROM dump_hash",
+
+        """
+        CREATE TABLE dump_title_token_v2 (
+            record_id TEXT NOT NULL REFERENCES dump_record_v2(id) ON DELETE CASCADE,
+            token TEXT NOT NULL,
+            PRIMARY KEY (record_id, token)
+        )
+        """.trimIndent(),
+
+        "INSERT INTO dump_title_token_v2 (record_id, token) " +
+            "SELECT record_id, token FROM dump_title_token",
+
+        "DROP TABLE dump_hash",
+        "DROP TABLE dump_title_token",
+        "DROP TABLE dump_record",
+
+        "ALTER TABLE dump_record_v2 RENAME TO dump_record",
+        "ALTER TABLE dump_hash_v2 RENAME TO dump_hash",
+        "ALTER TABLE dump_title_token_v2 RENAME TO dump_title_token",
+
+        "CREATE INDEX idx_dump_record_size ON dump_record(size)",
+        "CREATE INDEX idx_dump_record_source ON dump_record(source_id)",
+        "CREATE INDEX idx_dump_record_matchable ON dump_record(matchable)",
+        "CREATE INDEX idx_dump_hash_lookup ON dump_hash(algorithm, digest)",
+        "CREATE INDEX idx_dump_title_token ON dump_title_token(token)",
+
+        // The staging name a case-only rename passes through. Journalled
+        // because a crash between the two steps leaves the file under a name
+        // that appears nowhere else, and reconciliation has to be able to name
+        // it back to the user.
+        "ALTER TABLE rename_operation ADD COLUMN intermediate_name TEXT",
     )
 }

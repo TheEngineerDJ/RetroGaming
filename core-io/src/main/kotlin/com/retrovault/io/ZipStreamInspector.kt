@@ -119,6 +119,7 @@ class ZipStreamInspector(private val limits: ArchiveLimits = ArchiveLimits()) {
                     if (entry.isDirectory) continue
 
                     val name = entry.name
+                    if (isArchiverMetadata(name)) continue
                     if (name.length > limits.maxEntryNameLength) {
                         warnings += ArchiveWarning(null, "Skipped an entry with an unreasonably long name.")
                         continue
@@ -264,6 +265,24 @@ class ZipStreamInspector(private val limits: ArchiveLimits = ArchiveLimits()) {
                     (header[2].toInt() == 0x07 && header[3].toInt() == 0x08)
                 )
         return if (isZip) SignatureCheck.ZIP else SignatureCheck.NOT_AN_ARCHIVE
+    }
+
+    /**
+     * True for bookkeeping written by the archiver rather than by the user.
+     *
+     * A ZIP made on macOS carries a `__MACOSX/._name` resource fork beside every
+     * real entry, and Finder or Explorer may leave `.DS_Store` / `Thumbs.db`
+     * behind. Counting those as artifacts turns a single-ROM archive into a
+     * multi-entry one, which suppresses the archive's identity and makes the
+     * result ambiguous for no reason. They are dropped silently, not warned
+     * about: their presence says nothing about the archive.
+     */
+    private fun isArchiverMetadata(name: String): Boolean {
+        if (name.startsWith("__MACOSX/")) return true
+        val leaf = name.substringAfterLast('/')
+        if (leaf.isEmpty()) return true
+        if (leaf.startsWith("._")) return true
+        return leaf.equals(".DS_Store", ignoreCase = true) || leaf.equals("Thumbs.db", ignoreCase = true)
     }
 
     /** Rejects absolute paths and traversal segments (SECURITY_SPEC.md section 2). */

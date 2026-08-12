@@ -86,10 +86,10 @@ class SqlRenameJournalRepository(
     private fun upsertOperation(operation: RenameOperation) {
         database.execute(
             "INSERT OR REPLACE INTO rename_operation (id, batch_id, plan_entry_id, source_ref, " +
-                "directory_ref, source_name, destination_name, resolution_state, confidence, " +
+                "directory_ref, source_name, destination_name, intermediate_name, resolution_state, confidence, " +
                 "identity_description, naming_profile, precondition_size, precondition_hash_algorithm, " +
                 "precondition_hash_digest, state, failure_code, failure_detail, planned_at, started_at, " +
-                "finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             listOf(
                 operation.id.value,
                 operation.batchId.value,
@@ -98,6 +98,7 @@ class SqlRenameJournalRepository(
                 operation.directoryRef.value,
                 operation.sourceName,
                 operation.destinationName,
+                operation.intermediateName,
                 operation.resolutionState.name,
                 operation.confidence.name,
                 operation.identityDescription,
@@ -136,7 +137,8 @@ class SqlRenameJournalRepository(
 
         val operations = database.query(
             "SELECT id, batch_id, plan_entry_id, source_ref, directory_ref, source_name, " +
-                "destination_name, resolution_state, confidence, identity_description, naming_profile, " +
+                "destination_name, intermediate_name, resolution_state, confidence, identity_description, " +
+                "naming_profile, " +
                 "precondition_size, precondition_hash_algorithm, precondition_hash_digest, state, " +
                 "failure_code, failure_detail, planned_at, started_at, finished_at " +
                 "FROM rename_operation WHERE batch_id = ? ORDER BY planned_at, id",
@@ -147,10 +149,10 @@ class SqlRenameJournalRepository(
     }
 
     private fun SqlRow.toOperation(): RenameOperation {
-        val algorithm = getStringOrNull(12)?.let { name ->
+        val algorithm = getStringOrNull(13)?.let { name ->
             runCatching { HashAlgorithm.valueOf(name) }.getOrNull()
         }
-        val digest = getStringOrNull(13)
+        val digest = getStringOrNull(14)
         return RenameOperation(
             id = RenameOperationId(getString(0)),
             batchId = RenameBatchId(getString(1)),
@@ -159,24 +161,25 @@ class SqlRenameJournalRepository(
             directoryRef = StorageRef(getString(4)),
             sourceName = getString(5),
             destinationName = getString(6),
-            resolutionState = runCatching { ResolutionState.valueOf(getString(7)) }
+            intermediateName = getStringOrNull(7),
+            resolutionState = runCatching { ResolutionState.valueOf(getString(8)) }
                 .getOrDefault(ResolutionState.NO_MATCH),
-            confidence = runCatching { ConfidenceLevel.valueOf(getString(8)) }
+            confidence = runCatching { ConfidenceLevel.valueOf(getString(9)) }
                 .getOrDefault(ConfidenceLevel.UNKNOWN),
-            identityDescription = getString(9),
-            namingProfileVersionedId = getString(10),
-            preconditionSize = getLong(11),
+            identityDescription = getString(10),
+            namingProfileVersionedId = getString(11),
+            preconditionSize = getLong(12),
             preconditionHash = if (algorithm != null && digest != null) {
                 HashValue.parse(algorithm, digest)
             } else {
                 null
             },
-            state = runCatching { RenameOperationState.valueOf(getString(14)) }
+            state = runCatching { RenameOperationState.valueOf(getString(15)) }
                 .getOrDefault(RenameOperationState.RECONCILED_UNKNOWN),
-            failure = getStringOrNull(15)?.let { code -> RenameFailure.fromCode(code, getStringOrNull(16)) },
-            plannedAtEpochMillis = getLong(17),
-            startedAtEpochMillis = getLongOrNull(18),
-            finishedAtEpochMillis = getLongOrNull(19),
+            failure = getStringOrNull(16)?.let { code -> RenameFailure.fromCode(code, getStringOrNull(17)) },
+            plannedAtEpochMillis = getLong(18),
+            startedAtEpochMillis = getLongOrNull(19),
+            finishedAtEpochMillis = getLongOrNull(20),
         )
     }
 

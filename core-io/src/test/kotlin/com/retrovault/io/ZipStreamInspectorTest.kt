@@ -224,4 +224,31 @@ class ZipStreamInspectorTest {
 
         assertEquals(first.entries, second.entries)
     }
+
+    @Test
+    fun `archiver bookkeeping is not mistaken for an artifact`() {
+        // A ZIP made on macOS carries a resource fork beside every real entry.
+        // Counting those would turn a single-ROM archive into a multi-entry
+        // one, which suppresses its identity for no reason.
+        val archive = zip(
+            "__MACOSX/._game.sfc" to "junk".toByteArray(),
+            "game.sfc" to "abc".toByteArray(),
+            ".DS_Store" to "junk".toByteArray(),
+            "sub/Thumbs.db" to "junk".toByteArray(),
+            "sub/._other.sfc" to "junk".toByteArray(),
+        )
+
+        val inspected = assertIs<ArchiveInspection.Inspected>(inspect(archive))
+
+        assertEquals(listOf("game.sfc"), inspected.entries.map { it.entryPath })
+    }
+
+    @Test
+    fun `a real entry whose name merely resembles bookkeeping is kept`() {
+        val archive = zip("Thumbs.db.sfc" to "abc".toByteArray())
+
+        val inspected = assertIs<ArchiveInspection.Inspected>(inspect(archive))
+
+        assertEquals(listOf("Thumbs.db.sfc"), inspected.entries.map { it.entryPath })
+    }
 }
