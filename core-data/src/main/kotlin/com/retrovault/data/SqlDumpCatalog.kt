@@ -46,12 +46,20 @@ class SqlDumpCatalog(
      * user is entitled to see.
      */
     override suspend fun findByNormalizedTitle(title: NormalizedTitle): List<DumpRecord> = read {
-        val tokens = title.tokens().distinct()
+        val tokens = title.tokens().distinct().take(RecordMapper.MAX_PARAMETERS)
         if (tokens.isEmpty()) return@read emptyList()
         val placeholders = tokens.joinToString(",") { "?" }
         selectRecords(
             where = "r.id IN (SELECT record_id FROM dump_title_token WHERE token IN ($placeholders))",
             arguments = tokens,
+            // A common token can match a large part of the catalogue. The cap
+            // keeps memory bounded; ordering by shared-token count first means
+            // the records dropped are the least similar ones, so recall is
+            // spent where it is worth most.
+            limit = MAX_TITLE_CANDIDATES,
+            orderBy = "(SELECT COUNT(*) FROM dump_title_token t " +
+                "WHERE t.record_id = r.id AND t.token IN ($placeholders)) DESC, r.id",
+            extraArguments = tokens,
         )
     }
 
@@ -149,15 +157,22 @@ class SqlDumpCatalog(
 
     // ------------------------------------------------------------- plumbing
 
-    private fun selectRecords(where: String, arguments: List<Any?>): List<DumpRecord> {
+    private fun selectRecords(
+        where: String,
+        arguments: List<Any?>,
+        limit: Int? = null,
+        orderBy: String = "r.id",
+        extraArguments: List<Any?> = emptyList(),
+    ): List<DumpRecord> {
         val rows = database.query(
             "SELECT r.id, r.set_name, r.rom_name, r.size, r.platform, r.canonical_title, " +
                 "r.normalized_title, r.revision, r.version, r.disc_number, r.status, r.external_id, " +
                 "r.regions, r.languages, r.flags, " +
                 "s.id, s.provider, s.set_name, s.version, s.platform, s.imported_at, s.source_digest " +
                 "FROM dump_record r JOIN dat_source s ON s.id = r.source_id " +
-                "WHERE s.state = ? AND ($where) ORDER BY r.id",
-            listOf(STATE_READY) + arguments,
+                "WHERE s.state = ? AND ($where) ORDER BY $orderBy" +
+                if (limit != null) " LIMIT $limit" else "",
+            listOf(STATE_READY) + arguments + extraArguments,
         ) { row -> RecordMapper.map(row) }
 
         if (rows.isEmpty()) return emptyList()
@@ -188,5 +203,13 @@ class SqlDumpCatalog(
     private companion object {
         const val STATE_IMPORTING = "importing"
         const val STATE_READY = "ready"
+
+        /**
+         * Upper bound on textual-fallback candidates held in memory at once.
+         * Generous enough that real ambiguity stays visible, small enough that
+         * a pathological query cannot exhaust memory
+         * (Constitution section 249).
+         */
+        const val MAX_TITLE_CANDIDATES = 500
     }
 }

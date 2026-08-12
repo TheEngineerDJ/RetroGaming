@@ -66,23 +66,47 @@ internal object RecordMapper {
         externalId = row.getStringOrNull(11),
     )
 
-    /** Loads digests for many records in one query rather than one per record. */
+    /**
+     * Maximum host parameters in one statement.
+     *
+     * SQLite's `SQLITE_MAX_VARIABLE_NUMBER` defaults to 999 on the build
+     * Android ships. A size lookup against a large DAT can easily match more
+     * records than that, so every `IN (...)` clause is chunked. Without this
+     * the code passes a four-file test and throws on a real library.
+     */
+    const val MAX_PARAMETERS: Int = 900
+
+    /** Loads digests for many records, in as few queries as the limit allows. */
     fun loadHashes(database: SqlDatabase, recordIds: List<String>): Map<String, HashDigests> {
         if (recordIds.isEmpty()) return emptyMap()
-        val placeholders = recordIds.joinToString(",") { "?" }
-        return database.query(
-            "SELECT record_id, algorithm, digest FROM dump_hash WHERE record_id IN ($placeholders)",
-            recordIds,
-        ) { row -> Triple(row.getString(0), row.getString(1), row.getString(2)) }
-            .groupBy { it.first }
-            .mapValues { (_, rows) ->
-                rows.fold(HashDigests.EMPTY) { digests, (_, algorithm, digest) ->
+        val rows = chunked(recordIds) { placeholders, chunk ->
+            database.query(
+                "SELECT record_id, algorithm, digest FROM dump_hash WHERE record_id IN ($placeholders)",
+                chunk,
+            ) { row -> Triple(row.getString(0), row.getString(1), row.getString(2)) }
+        }
+        return rows.groupBy { it.first }
+            .mapValues { (_, grouped) ->
+                grouped.fold(HashDigests.EMPTY) { digests, (_, algorithm, digest) ->
                     val parsed = runCatching { HashAlgorithm.valueOf(algorithm) }.getOrNull()
                         ?.let { HashValue.parse(it, digest) }
                     if (parsed == null) digests else digests.with(parsed)
                 }
             }
     }
+
+    /**
+     * Runs [query] once per chunk of [values] and concatenates the results.
+     *
+     * @param query receives the placeholder list and the arguments for one chunk.
+     */
+    fun <T> chunked(
+        values: List<String>,
+        query: (placeholders: String, chunk: List<String>) -> List<T>,
+    ): List<T> =
+        values.chunked(MAX_PARAMETERS).flatMap { chunk ->
+            query(chunk.joinToString(",") { "?" }, chunk)
+        }
 
     fun encodeList(values: List<String>): String = values.joinToString(SEPARATOR)
 

@@ -348,15 +348,16 @@ class SqlObservationRepository(
         ) { row -> row.getString(0) }
         if (catalogRows.isEmpty()) return emptyMap()
 
-        val placeholders = catalogRows.joinToString(",") { "?" }
-        val records = database.query(
-            "SELECT r.id, r.set_name, r.rom_name, r.size, r.platform, r.canonical_title, " +
-                "r.normalized_title, r.revision, r.version, r.disc_number, r.status, r.external_id, " +
-                "r.regions, r.languages, r.flags, s.id, s.provider, s.set_name, s.version, s.platform, " +
-                "s.imported_at, s.source_digest FROM dump_record r JOIN dat_source s ON s.id = r.source_id " +
-                "WHERE r.id IN ($placeholders)",
-            catalogRows,
-        ) { row -> RecordMapper.map(row) }
+        val records = RecordMapper.chunked(catalogRows) { placeholders, chunk ->
+            database.query(
+                "SELECT r.id, r.set_name, r.rom_name, r.size, r.platform, r.canonical_title, " +
+                    "r.normalized_title, r.revision, r.version, r.disc_number, r.status, r.external_id, " +
+                    "r.regions, r.languages, r.flags, s.id, s.provider, s.set_name, s.version, s.platform, " +
+                    "s.imported_at, s.source_digest FROM dump_record r " +
+                    "JOIN dat_source s ON s.id = r.source_id WHERE r.id IN ($placeholders)",
+                chunk,
+            ) { row -> RecordMapper.map(row) }
+        }
 
         val hashes = RecordMapper.loadHashes(database, records.map { it.id.value })
         return records.associate { record ->
