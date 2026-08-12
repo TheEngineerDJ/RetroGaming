@@ -1,6 +1,9 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
+    // Applied without a version: buildSrc already puts the Kotlin Gradle
+    // plugin on every buildscript classpath. Re-declaring a version here
+    // loads it a second time and Gradle rejects that as a classpath conflict.
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
