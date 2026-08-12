@@ -1,40 +1,12 @@
-plugins {
-    alias(libs.plugins.kotlin.jvm) apply false
-}
-
-// Shared configuration for every pure-JVM module.
+// Intentionally empty.
 //
-// Android modules configure themselves; they are deliberately excluded here so
-// that no Android concern leaks into the platform-independent core.
-subprojects {
-    plugins.withId("org.jetbrains.kotlin.jvm") {
-        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension>("kotlin") {
-            compilerOptions {
-                // JVM 17 bytecode keeps the core modules consumable by the
-                // Android build without requiring a matching local toolchain.
-                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-                allWarningsAsErrors.set(true)
-                freeCompilerArgs.add("-Xjvm-default=all")
-            }
-        }
-
-        tasks.withType<JavaCompile>().configureEach {
-            options.release.set(17)
-        }
-
-        tasks.withType<Test>().configureEach {
-            useJUnitPlatform()
-            // Lets a module assert its own dependency boundaries from a test,
-            // so the rule in ENGINEERING_SPEC.md section 1 is enforced by the
-            // build rather than by review.
-            systemProperty(
-                "retrovault.moduleSourceDir",
-                layout.projectDirectory.dir("src/main/kotlin").asFile.absolutePath,
-            )
-            testLogging {
-                events("failed")
-                exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-            }
-        }
-    }
-}
+// Shared JVM configuration lives in the `retrovault.kotlin-jvm` convention
+// plugin under `buildSrc`, which declares the Kotlin Gradle plugin explicitly.
+// Configuring subprojects from here would require this script to resolve
+// another plugin's types, which only works when that plugin happens to be on
+// the root buildscript classpath - and fails with "Unresolved reference:
+// org.jetbrains.kotlin" when it is not.
+//
+// Nothing Android-specific is declared here either. Android modules apply
+// their own versioned plugins, so a contributor without an Android SDK never
+// downloads the Android Gradle plugin at all.

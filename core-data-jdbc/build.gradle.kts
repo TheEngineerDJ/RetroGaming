@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    id("retrovault.kotlin-jvm")
 }
 
 // JVM SQLite binding.

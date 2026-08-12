@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    id("retrovault.kotlin-jvm")
 }
 
 // Streaming content inspection: hashing and archive reading.

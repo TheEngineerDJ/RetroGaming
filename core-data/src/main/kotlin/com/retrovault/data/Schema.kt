@@ -21,7 +21,10 @@ object Schema {
      * @return the version the database was on before this call.
      */
     fun migrate(database: SqlDatabase): Int = database.transaction {
-        database.execute("PRAGMA foreign_keys = ON")
+        // Foreign-key enforcement is switched on by each binding when it opens
+        // the connection, not here. `PRAGMA foreign_keys` is a no-op inside a
+        // transaction, and Android's execSQL rejects some PRAGMA statements
+        // outright, so issuing it here would be misleading at best.
         database.execute(
             "CREATE TABLE IF NOT EXISTS schema_version (" +
                 "version INTEGER NOT NULL, applied_at INTEGER NOT NULL)",

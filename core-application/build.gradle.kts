@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    id("retrovault.kotlin-jvm")
 }
 
 // Use cases and the ports they depend on.

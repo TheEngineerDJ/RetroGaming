@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    id("retrovault.kotlin-jvm")
 }
 
 // Local-filesystem implementations of the application ports.
