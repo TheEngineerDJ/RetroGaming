@@ -202,8 +202,13 @@ class SafDirectoryWalker(
 class SafContentSource(
     private val context: Context,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val inspector: ZipStreamInspector = ZipStreamInspector(),
 ) : ContentSource {
+
+    // An implementation detail, not a constructor parameter. Exposing it would
+    // put a core-io type in this class's public signature, and core-io is an
+    // `implementation` dependency - so every caller would need it on their own
+    // compile classpath just to invoke the constructor.
+    private val inspector = ZipStreamInspector()
 
     private val resolver: ContentResolver get() = context.contentResolver
 

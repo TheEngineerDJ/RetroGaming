@@ -149,8 +149,11 @@ class LocalDirectoryWalker(
 /** Reads local files and archives through the shared streaming implementations. */
 class LocalContentSource(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val inspector: ZipStreamInspector = ZipStreamInspector(),
 ) : ContentSource {
+
+    // See SafContentSource: kept private so no core-io type appears in this
+    // class's public signature.
+    private val inspector = ZipStreamInspector()
 
     override suspend fun computeHashes(
         ref: ArtifactContentRef,
