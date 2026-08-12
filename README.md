@@ -32,6 +32,22 @@ This is a build-tooling decision only. It does not weaken layering: the Android
 modules are infrastructure and presentation, and hold no identity, naming or
 rename rules.
 
+### Where the Gradle plugins come from
+
+All Gradle plugins are loaded from one classpath, declared in `buildSrc`, and
+applied by id with no version in module build files. That is not stylistic:
+
+- The Kotlin Gradle plugin must load exactly once. Declaring it at the root
+  while an Android module resolves its own copy loads it twice, and Gradle
+  rejects that as a classpath conflict.
+- The Kotlin Android plugin references Android Gradle plugin types. If the two
+  are loaded into different classloaders, applying it fails with
+  `NoClassDefFoundError: com/android/build/gradle/api/BaseVariant`.
+
+`buildSrc` adds the Android plugins only when an SDK is present, mirroring the
+module-inclusion check, so a JVM-only contributor never has to reach Google's
+Maven repository. Building the Android modules does require access to it.
+
 ---
 
 ## Modules

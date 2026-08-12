@@ -1,10 +1,9 @@
+// See platform-android: plugins come from the shared buildSrc classpath, so
+// no versions are declared here.
 plugins {
-    alias(libs.plugins.android.application)
-    // See platform-android: the Kotlin plugin comes from buildSrc, so no
-    // version is declared here. The Compose compiler plugin is a separate
-    // artifact and is still resolved through the catalog.
+    id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    alias(libs.plugins.kotlin.compose)
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {

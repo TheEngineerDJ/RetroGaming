@@ -1,8 +1,9 @@
+// Every plugin is applied without a version. buildSrc puts the Kotlin and
+// Android Gradle plugins on one shared buildscript classpath; naming a version
+// here would resolve a second copy into this module's own classloader, where
+// the two plugins can no longer see each other.
 plugins {
-    alias(libs.plugins.android.library)
-    // Applied without a version: buildSrc already puts the Kotlin Gradle
-    // plugin on every buildscript classpath. Re-declaring a version here
-    // loads it a second time and Gradle rejects that as a classpath conflict.
+    id("com.android.library")
     id("org.jetbrains.kotlin.android")
 }
 

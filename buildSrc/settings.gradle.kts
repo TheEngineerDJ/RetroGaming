@@ -1,5 +1,15 @@
 dependencyResolutionManagement {
     repositories {
+        // Consulted only for Android artifacts, and only when an Android SDK
+        // is present (see build.gradle.kts). The content filter keeps a build
+        // that cannot reach this host from failing on unrelated dependencies.
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
