@@ -1,8 +1,6 @@
-plugins {
-    alias(libs.plugins.kotlin.jvm) apply false
-}
+// Root project intentionally declares no Kotlin plugins.
+// Each module resolves its own plugins through the version catalog.
 
-// Shared configuration for every pure-JVM module.
 subprojects {
     plugins.withId("org.jetbrains.kotlin.jvm") {
         extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension>("kotlin") {
