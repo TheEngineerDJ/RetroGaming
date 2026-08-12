@@ -161,6 +161,21 @@ sealed interface MatchSignal {
     data class Unsupported(val reason: String) : MatchSignal {
         override val id: String get() = "unsupported"
     }
+
+    /**
+     * Evidence read back from storage.
+     *
+     * A persisted signal keeps its stable [id], its direction and whether it
+     * excluded the candidate - everything planning, display and audit need.
+     * The structured payload (which hash, which regions) is not reconstructed,
+     * because the human-readable description recorded alongside it already
+     * carries that detail and re-deriving it would risk stating something the
+     * original decision did not.
+     */
+    data class Recorded(
+        override val id: String,
+        override val excludesIdentity: Boolean,
+    ) : MatchSignal
 }
 
 /**

@@ -35,8 +35,10 @@ rootProject.name = "retrovault"
 include(":core-domain")
 include(":core-application")
 include(":core-dat")
+include(":core-io")
 include(":core-data")
 include(":core-data-jdbc")
+include(":platform-jvm")
 
 // ---------------------------------------------------------------------------
 // Android modules require the Android SDK. They are included only when an SDK

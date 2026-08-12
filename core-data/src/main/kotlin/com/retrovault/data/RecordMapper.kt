@@ -1,0 +1,91 @@
+package com.retrovault.data
+
+import com.retrovault.domain.catalog.DatSourceRef
+import com.retrovault.domain.catalog.DumpRecord
+import com.retrovault.domain.identity.DatSourceId
+import com.retrovault.domain.identity.DumpRecordId
+import com.retrovault.domain.identity.DumpStatus
+import com.retrovault.domain.identity.HashAlgorithm
+import com.retrovault.domain.identity.HashDigests
+import com.retrovault.domain.identity.HashValue
+import com.retrovault.domain.identity.LanguageCode
+import com.retrovault.domain.identity.PlatformName
+import com.retrovault.domain.identity.RegionCode
+import com.retrovault.domain.identity.ReleaseFlag
+import com.retrovault.domain.naming.NormalizedTitle
+
+/**
+ * Maps catalogue rows to domain records.
+ *
+ * Shared by the catalogue and by observation loading so that a record read
+ * through either path is identical - a resolution replayed from the journal
+ * must describe the same identity the scan described.
+ */
+internal object RecordMapper {
+
+    /**
+     * ASCII unit separator. Region, language and flag codes are drawn from
+     * controlled vocabularies that cannot contain it.
+     */
+    const val SEPARATOR: String = "\u001F"
+
+    /**
+     * Column order expected by [map]:
+     * `id, set_name, rom_name, size, platform, canonical_title, normalized_title,
+     * revision, version, disc_number, status, external_id, regions, languages,
+     * flags, source_id, provider, source_set_name, source_version,
+     * source_platform, imported_at, source_digest`
+     */
+    fun map(row: SqlRow): DumpRecord = DumpRecord(
+        id = DumpRecordId(row.getString(0)),
+        source = DatSourceRef(
+            id = DatSourceId(row.getString(15)),
+            provider = row.getString(16),
+            setName = row.getString(17),
+            version = row.getStringOrNull(18),
+            platform = PlatformName(row.getString(19)),
+            importedAtEpochMillis = row.getLong(20),
+            sourceDigest = row.getStringOrNull(21),
+        ),
+        setName = row.getString(1),
+        romName = row.getString(2),
+        size = row.getLong(3),
+        hashes = HashDigests.EMPTY,
+        platform = PlatformName(row.getString(4)),
+        canonicalTitle = row.getString(5),
+        normalizedTitle = NormalizedTitle(row.getString(6)),
+        regions = row.getString(12).splitList().map(::RegionCode),
+        languages = row.getString(13).splitList().map(::LanguageCode),
+        revision = row.getStringOrNull(7),
+        version = row.getStringOrNull(8),
+        discNumber = row.getLongOrNull(9)?.toInt(),
+        flags = row.getString(14).splitList()
+            .mapNotNull { name -> runCatching { ReleaseFlag.valueOf(name) }.getOrNull() }
+            .toSet(),
+        status = runCatching { DumpStatus.valueOf(row.getString(10)) }.getOrDefault(DumpStatus.UNKNOWN),
+        externalId = row.getStringOrNull(11),
+    )
+
+    /** Loads digests for many records in one query rather than one per record. */
+    fun loadHashes(database: SqlDatabase, recordIds: List<String>): Map<String, HashDigests> {
+        if (recordIds.isEmpty()) return emptyMap()
+        val placeholders = recordIds.joinToString(",") { "?" }
+        return database.query(
+            "SELECT record_id, algorithm, digest FROM dump_hash WHERE record_id IN ($placeholders)",
+            recordIds,
+        ) { row -> Triple(row.getString(0), row.getString(1), row.getString(2)) }
+            .groupBy { it.first }
+            .mapValues { (_, rows) ->
+                rows.fold(HashDigests.EMPTY) { digests, (_, algorithm, digest) ->
+                    val parsed = runCatching { HashAlgorithm.valueOf(algorithm) }.getOrNull()
+                        ?.let { HashValue.parse(it, digest) }
+                    if (parsed == null) digests else digests.with(parsed)
+                }
+            }
+    }
+
+    fun encodeList(values: List<String>): String = values.joinToString(SEPARATOR)
+
+    fun String.splitList(): List<String> =
+        if (isEmpty()) emptyList() else split(SEPARATOR).filter { it.isNotEmpty() }
+}
