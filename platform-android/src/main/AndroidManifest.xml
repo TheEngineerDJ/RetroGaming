@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No permissions are declared.
+
+  RetroVault reaches user storage only through the Storage Access Framework,
+  where the user picks the folder and grants access explicitly
+  (Constitution section 161). Broad storage permissions would widen access
+  beyond what the user chose.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No storage permission is requested.
+
+  The user picks a folder through the Storage Access Framework and RetroVault
+  works only inside it. No network permission is declared either: core
+  identification is offline by design (Constitution section 163), and declaring
+  none makes that verifiable rather than merely stated.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="false"
+        android:label="RetroVault"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.RetroVault">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="RetroVault">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

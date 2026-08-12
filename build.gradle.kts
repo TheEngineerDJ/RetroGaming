@@ -24,6 +24,13 @@ subprojects {
 
         tasks.withType<Test>().configureEach {
             useJUnitPlatform()
+            // Lets a module assert its own dependency boundaries from a test,
+            // so the rule in ENGINEERING_SPEC.md section 1 is enforced by the
+            // build rather than by review.
+            systemProperty(
+                "retrovault.moduleSourceDir",
+                layout.projectDirectory.dir("src/main/kotlin").asFile.absolutePath,
+            )
             testLogging {
                 events("failed")
                 exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

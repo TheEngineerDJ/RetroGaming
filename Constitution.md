@@ -3806,23 +3806,31 @@ Performance optimization must never change match semantics silently.
 
 # 172. Current Implementation as Architectural Evidence
 
-The existing Android ROM-normalization implementation demonstrates several constitutional principles in practice.
+The ROM-normalization implementation demonstrates several constitutional principles in practice.
 
-Current implementation evidence includes:
+Implemented and verified on the JVM:
 - modular core architecture with UI-independent logic
-- 47 passing JVM unit tests across the current scaffold
-- recursive Android storage traversal optimized around `DocumentsContract` cursors
-- streaming Logiqx XML parsing with `XmlPullParser`
-- merged offline DAT lookup indexing
-- asynchronous CRC32, MD5, and SHA1 hashing using Kotlin coroutines and IO dispatching
-- ZIP archive inspection
-- progressive scanner results
-- file-size prefiltering
-- CRC ambiguity escalation
-- full-batch validation before rename execution
-- Android Storage Access Framework in-place rename operations
-- filename sanitization and fuzzy matching fallback
+- a deterministic identity resolver that performs no I/O, so every escalation rule is testable without a device
+- streaming Logiqx DAT parsing over a dependency-free XML scanner that cannot resolve external entities
+- offline DAT indexing by size, hash and title token, with source provenance preserved
+- streaming CRC32, MD5 and SHA1 hashing using Kotlin coroutines and IO dispatching
+- ZIP inspection without extraction, with bounded entry count and decompressed size
+- progressive scanner results with bounded worker concurrency and cooperative cancellation
+- file-size prefiltering, exposed as evidence rather than treated as proof of absence
+- CRC ambiguity escalation to a cryptographic hash
+- full-batch validation before any rename execution, and a durable rename journal
+- filename sanitization, typed token classification and bounded fuzzy fallback
+- SQLite persistence with forward-only migrations, exercised end to end
+
+Implemented but not yet verified on hardware:
+- recursive Android storage traversal over `DocumentsContract` cursors
+- Storage Access Framework in-place rename
 - Jetpack Compose presentation through a separated UI layer
+
+The distinction matters. An untested claim about a storage provider is exactly
+the kind of confident-looking assertion this constitution exists to prevent, so
+the Android adapters remain marked unverified until they have run on a device
+against real providers.
 
 These are implementation facts, not permanent architecture requirements.
 

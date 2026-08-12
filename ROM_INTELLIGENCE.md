@@ -362,25 +362,30 @@ Android SAF implementation belongs in infrastructure.
 
 The known implementation optimization is recursive `DocumentsContract` cursor traversal to reduce massive IPC overhead associated with repeated `DocumentFile` operations.
 
-## 17. Existing implementation baseline
+## 17. Implementation baseline
 
-Current project work established:
+The first vertical slice establishes:
 
-- modular architecture
-- core logic independent of UI
-- SAF directory traversal
-- Logiqx XML parsing
-- merged offline DAT indexing
-- asynchronous CRC32/MD5/SHA1 hashing
-- ZIP inspection
-- size-based filtering
-- progressive scanner output
-- ambiguous CRC escalation
-- batch validation
-- SAF in-place renaming
-- filename sanitization
-- fuzzy fallback matching
+- modular architecture with the dependency direction `UI → Application → Domain ← Infrastructure`
+- core logic independent of UI, Android, SQLite and the filesystem
+- SAF directory traversal over `DocumentsContract` cursors
+- streaming Logiqx XML parsing
+- offline DAT indexing by size, hash and title token, with provenance preserved
+- streaming CRC32/MD5/SHA1 hashing with bounded concurrency
+- ZIP inspection without extraction
+- size-based filtering, reported as evidence
+- progressive scanner output with cancellation
+- ambiguous CRC escalation to a cryptographic hash
+- whole-batch validation before mutation
+- SAF in-place renaming with a durable journal and reconciliation
+- filename sanitization and typed token classification
+- bounded fuzzy fallback matching
 - Jetpack Compose UI foundation
+
+Everything above is covered by JVM tests except the three Android adapters
+(SAF traversal, SAF rename, Compose), which are written but await verification
+on a device against real storage providers. That gap is recorded rather than
+glossed over: an unverified claim about provider behaviour is not evidence.
 
 This baseline is implementation evidence, not a constraint that prevents architectural improvement.
 
