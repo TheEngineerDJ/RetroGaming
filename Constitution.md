@@ -3707,6 +3707,42 @@ Implementations may optimize individual stages without violating the trust model
 
 ---
 
+# 166A. Media Type and Dataset Coverage
+
+Media type is first-class metadata, recorded on every catalogued dump and every observation.
+
+A PSP UMD image is optical-disc media, not a generic ROM. A cartridge dump, a floppy image, a tape image and a disc image are different classes of artifact, catalogued by different projects and carrying different evidence.
+
+Media type is read from the artifact's name. It is therefore representation, never identity:
+
+- It must never on its own exclude a candidate. One release is legitimately preserved as `.cue`+`.bin`, `.chd` and `.iso`.
+- A medium disagreement weakens a candidate and must appear as a visible reason.
+- An extension used by more than one medium resolves to unknown rather than to a guess.
+
+Dataset provenance — which preservation project produced a DAT — is recorded from what the DAT states about itself. It explains results and never restricts what is consulted.
+
+What a dataset covers is **measured** from the records it indexes, counting only records fit for matching. Reputation is not evidence.
+
+Before content is read, the pipeline determines whether any imported dataset covers the artifact's medium. Hashing a large disc image against a cartridge-only catalogue cannot produce a match, and the honest answer is already available.
+
+---
+
+# 166B. Absence of a Match Is Not Unknown Identity
+
+The pipeline distinguishes:
+
+**Not listed** — the datasets cover this medium and do not describe this artifact. Weak evidence about the artifact.
+
+**Not covered** — no imported dataset covers this medium. A fact about the catalogue, carrying no information about the artifact.
+
+**Nothing imported** — the catalogue cannot speak at all.
+
+These have different remedies and are therefore different states, counted separately and worded differently.
+
+Every uncertain case resolves towards "covered". A scope judgement must never be the reason a real match is missed.
+
+---
+
 # 167. Exact Match vs Heuristic Match
 
 The interface must distinguish exact and heuristic identification.
@@ -3724,6 +3760,20 @@ Suggested result labels:
 **Unknown** — insufficient evidence.
 
 A user should never mistake a fuzzy filename match for a cryptographic match.
+
+Every resolution therefore also states its **identity basis**, independently of confidence:
+
+**Verified** — a cryptographic hash of the content matched a catalogued digest.
+
+**Structural** — size and CRC32 agree and the catalogue offered nothing stronger.
+
+**Inferred** — identity was read from the filename or metadata; the bytes were not verified.
+
+**None** — no identity was established.
+
+Confidence answers "how sure"; basis answers "resting on what". Both travel through the domain, the preview and the audit record.
+
+Filename and text fallback remain required. They are never presented as content verification.
 
 ---
 

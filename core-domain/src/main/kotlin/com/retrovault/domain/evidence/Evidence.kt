@@ -2,6 +2,7 @@ package com.retrovault.domain.evidence
 
 import com.retrovault.domain.catalog.DatSourceRef
 import com.retrovault.domain.identity.HashAlgorithm
+import com.retrovault.domain.identity.MediaType
 import com.retrovault.domain.identity.RegionCode
 
 /**
@@ -160,6 +161,41 @@ sealed interface MatchSignal {
 
     data class Unsupported(val reason: String) : MatchSignal {
         override val id: String get() = "unsupported"
+    }
+
+    /**
+     * The candidate describes a different medium than the file appears to be.
+     *
+     * This weakens without excluding, and the distinction is deliberate. The
+     * same disc legitimately exists as `.cue`+`.bin`, `.chd` and `.iso`, and
+     * Constitution section 200 holds that a difference of *representation* does
+     * not make something a different release. A medium disagreement is a reason
+     * to look harder, not a reason to rule out.
+     */
+    data class MediaTypeMismatch(
+        val observed: MediaType,
+        val catalogued: MediaType,
+    ) : MatchSignal {
+        override val id: String get() = "media_type_mismatch"
+    }
+
+    /**
+     * No imported dataset catalogues this kind of medium.
+     *
+     * Pipeline evidence, not candidate evidence: it says the catalogue has
+     * nothing to say, which is a fact about the catalogue rather than about the
+     * file (Constitution section 174).
+     */
+    data class MediaNotCovered(
+        val observed: MediaType,
+        val available: Set<MediaType>,
+    ) : MatchSignal {
+        override val id: String get() = "media_not_covered"
+    }
+
+    /** Nothing has been imported, so no identification was possible at all. */
+    data object NoDatasetsImported : MatchSignal {
+        override val id: String get() = "no_datasets_imported"
     }
 
     /**

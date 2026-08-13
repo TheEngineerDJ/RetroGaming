@@ -1,6 +1,9 @@
 package com.retrovault.domain.resolution
 
 import com.retrovault.domain.catalog.CanonicalIdentityKey
+import com.retrovault.domain.catalog.CatalogueCoverage
+import com.retrovault.domain.catalog.CoverageAssessment
+import com.retrovault.domain.catalog.DatasetCompatibility
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.evidence.Evidence
 import com.retrovault.domain.evidence.EvidenceStrength
@@ -10,6 +13,7 @@ import com.retrovault.domain.identity.DatSourceId
 import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.HashDigests
 import com.retrovault.domain.identity.HashValue
+import com.retrovault.domain.identity.MediaType
 import com.retrovault.domain.identity.RegionCode
 import com.retrovault.domain.identity.RegionVocabulary
 import com.retrovault.domain.naming.FilenameTokenizer
@@ -103,6 +107,7 @@ internal enum class Phase {
  */
 class ResolutionSession private constructor(
     internal val observation: FileObservation,
+    internal val coverage: CatalogueCoverage,
     internal val phase: Phase,
     internal val pool: List<DumpRecord>,
     internal val hashes: HashDigests,
@@ -123,6 +128,7 @@ class ResolutionSession private constructor(
         strictCandidates: List<DumpRecord> = this.strictCandidates,
     ): ResolutionSession = ResolutionSession(
         observation = observation,
+        coverage = coverage,
         phase = phase,
         pool = pool,
         hashes = hashes,
@@ -134,8 +140,12 @@ class ResolutionSession private constructor(
     )
 
     internal companion object {
-        fun initial(observation: FileObservation): ResolutionSession = ResolutionSession(
+        fun initial(
+            observation: FileObservation,
+            coverage: CatalogueCoverage,
+        ): ResolutionSession = ResolutionSession(
             observation = observation,
+            coverage = coverage,
             phase = Phase.SIZE_LOOKUP,
             pool = emptyList(),
             hashes = observation.identityBearingHashes(),
@@ -161,10 +171,35 @@ class ResolutionSession private constructor(
  */
 class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
 
-    fun begin(observation: FileObservation): ResolutionStage {
-        val session = ResolutionSession.initial(observation)
+    /**
+     * Starts resolving one observation.
+     *
+     * @param coverage what the imported datasets are known to describe. The
+     * default is [CatalogueCoverage.UNMEASURED], which means "the caller did not
+     * look": the resolver then makes no claim about scope and reports plain
+     * absence of a match, exactly as it did before coverage existed. A caller
+     * that supplies measured coverage gets the stronger distinction between
+     * "not listed" and "not covered".
+     */
+    fun begin(
+        observation: FileObservation,
+        coverage: CatalogueCoverage = CatalogueCoverage.UNMEASURED,
+    ): ResolutionStage {
+        val session = ResolutionSession.initial(observation, coverage)
         unsupportedReason(observation)?.let { evidence ->
             return complete(session, ResolutionState.UNSUPPORTED, pipelineEvidence = listOf(evidence))
+        }
+        // Checked before any bytes are read. Hashing a 1.5 GB UMD image against
+        // a cartridge-only catalogue cannot produce a match, and the honest
+        // answer - "no dataset covers optical discs" - is already available
+        // (Constitution section 24: avoid unnecessary work before avoiding
+        // unnecessary I/O).
+        outOfScopeEvidence(session)?.let { evidence ->
+            return complete(
+                session,
+                ResolutionState.OUT_OF_CATALOGUE_SCOPE,
+                pipelineEvidence = listOf(evidence),
+            )
         }
         val size = observation.identityBearingSize()
             ?: return complete(
@@ -610,7 +645,9 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
         val observedSize = observation.identityBearingSize()
         val withSources = session.next(consultedSources = mergeSources(session, records))
 
-        val scored = records.mapNotNull { record -> scoreTitleCandidate(parsed, record, observedSize) }
+        val scored = records.mapNotNull { record ->
+            scoreTitleCandidate(parsed, record, observedSize, observation.mediaType)
+        }
         if (scored.isEmpty()) {
             return complete(withSources, ResolutionState.NO_MATCH)
         }
@@ -675,6 +712,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
         parsed: ParsedFilename,
         record: DumpRecord,
         observedSize: Long?,
+        observedMedia: MediaType,
     ): Candidate? {
         // Each variant is a different guess at where the title ends and the
         // noise begins. Scoring all of them and keeping the best means an
@@ -717,6 +755,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
         var penalty = 0
         penalty += compareRevision(parsed.revision, record, contradicting)
         penalty += compareDisc(parsed.discNumber, record, contradicting)
+        penalty += compareMedia(observedMedia, record, contradicting)
 
         val catalogueSize = record.size
         if (observedSize != null && catalogueSize != null) {
@@ -772,6 +811,36 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
                 source = record.source,
             )
         }
+    }
+
+    /**
+     * Weighs a medium disagreement between the file and the catalogue record.
+     *
+     * Deliberately a penalty rather than an exclusion. One disc exists as
+     * `.cue`+`.bin`, `.chd` and `.iso`, and Constitution section 200 holds that
+     * a difference of representation does not make something a different
+     * release. What it does mean is that a cartridge record should never
+     * outrank a disc record when the file on disk is a disc image, which is
+     * what the penalty achieves.
+     *
+     * @return the score penalty this comparison incurs.
+     */
+    private fun compareMedia(
+        observed: MediaType,
+        record: DumpRecord,
+        contradicting: MutableList<Evidence>,
+    ): Int {
+        if (observed == MediaType.UNKNOWN || record.mediaType == MediaType.UNKNOWN) return 0
+        if (observed == record.mediaType) return 0
+        contradicting += Evidence.contradicting(
+            MatchSignal.MediaTypeMismatch(observed, record.mediaType),
+            EvidenceStrength.MODERATE,
+            "This file looks like ${observed.describe} media but the catalogued dump is " +
+                "${record.mediaType.describe} media. That can happen when one release is preserved in " +
+                "several forms, so it weakens this candidate rather than ruling it out.",
+            source = record.source,
+        )
+        return MEDIA_MISMATCH_PENALTY
     }
 
     /** @return the score penalty this comparison incurs. */
@@ -890,6 +959,46 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
     // Shared helpers
     // -----------------------------------------------------------------------
 
+    /**
+     * Explains why the catalogue has no standing to judge this file, if it has none.
+     *
+     * Returning `null` means the datasets do cover this kind of artifact, so a
+     * later absence of a match is a real (if weak) fact about the file rather
+     * than a gap in what was imported.
+     */
+    private fun outOfScopeEvidence(session: ResolutionSession): Evidence? {
+        val observed = session.observation.mediaType
+        return when (val assessment = DatasetCompatibility.assess(observed, session.coverage)) {
+            is CoverageAssessment.Covered -> null
+
+            is CoverageAssessment.NoDatasets -> Evidence.informational(
+                MatchSignal.NoDatasetsImported,
+                "No dataset has been imported, so RetroVault has nothing to identify this file against. " +
+                    "This says nothing about the file itself.",
+            )
+
+            is CoverageAssessment.MediaNotCovered -> Evidence.informational(
+                MatchSignal.MediaNotCovered(assessment.observed, assessment.available),
+                "This looks like ${article(observed)} ${observed.describe} image, and no imported dataset " +
+                    "catalogues ${observed.describe} media" +
+                    describeAvailable(assessment.available) +
+                    ". RetroVault cannot say what this file is until a dataset covering " +
+                    "${observed.describe} media is imported - it is uncatalogued here, not unidentifiable.",
+            )
+        }
+    }
+
+    private fun describeAvailable(available: Set<MediaType>): String =
+        if (available.isEmpty()) {
+            ""
+        } else {
+            " (the imported datasets cover " +
+                available.sortedBy { it.name }.joinToString(", ") { it.describe } + " media)"
+        }
+
+    private fun article(media: MediaType): String =
+        if (media.describe.first() in "aeiou") "an" else "a"
+
     private fun unsupportedReason(observation: FileObservation): Evidence? = when {
         observation.container == ContainerKind.UNSUPPORTED_ARCHIVE -> Evidence.informational(
             MatchSignal.Unsupported("unsupported archive format"),
@@ -997,7 +1106,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
          * Constitution section 227: any algorithm that materially affects
          * canonical output carries a version, and results record it.
          */
-        const val VERSION: String = "artifact-resolver-v1"
+        const val VERSION: String = "artifact-resolver-v2"
 
         /**
          * Score cost of an identity token the catalogue record does not state.
@@ -1005,5 +1114,14 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
          * small enough that it never outranks stronger evidence.
          */
         private const val UNMATCHED_TOKEN_PENALTY = 10
+
+        /**
+         * Score cost of a medium disagreement between the file and the record.
+         *
+         * Heavier than an unstated token because the medium is a stronger
+         * discriminator than a missing revision, and still short of exclusion
+         * because one release can be preserved in several forms.
+         */
+        private const val MEDIA_MISMATCH_PENALTY = 20
     }
 }

@@ -1,5 +1,6 @@
 package com.retrovault.application
 
+import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.observation.FileObservation
 import com.retrovault.domain.resolution.ArtifactResolution
 import com.retrovault.domain.resolution.ArtifactResolver
@@ -31,8 +32,19 @@ class ResolveArtifactUseCase(
      */
     private val maxRounds = 16
 
-    suspend fun resolve(observation: FileObservation): ArtifactResolution {
-        var stage = resolver.begin(observation)
+    /**
+     * @param coverage what the imported datasets describe. Read once per scan
+     * by the caller rather than per file: it is the same answer for every file
+     * in a session, and querying it per artifact would add a database round
+     * trip to each one. Omitting it is honest - the resolver then makes no
+     * claim about scope - but it costs the "uncatalogued, not unidentifiable"
+     * distinction, so [ScanLocationUseCase] always supplies it.
+     */
+    suspend fun resolve(
+        observation: FileObservation,
+        coverage: CatalogueCoverage = CatalogueCoverage.UNMEASURED,
+    ): ArtifactResolution {
+        var stage = resolver.begin(observation, coverage)
         var rounds = 0
         while (stage is ResolutionStage.AwaitingEvidence) {
             currentCoroutineContext().ensureActive()

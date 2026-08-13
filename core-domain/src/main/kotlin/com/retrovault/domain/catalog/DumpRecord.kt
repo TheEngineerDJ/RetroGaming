@@ -1,12 +1,15 @@
 package com.retrovault.domain.catalog
 
 import com.retrovault.domain.identity.DatSourceId
+import com.retrovault.domain.identity.DatasetKind
 import com.retrovault.domain.identity.DumpRecordId
 import com.retrovault.domain.identity.DumpStatus
 import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.HashDigests
 import com.retrovault.domain.identity.HashValue
 import com.retrovault.domain.identity.LanguageCode
+import com.retrovault.domain.identity.MediaType
+import com.retrovault.domain.identity.MediaTypeVocabulary
 import com.retrovault.domain.identity.PlatformName
 import com.retrovault.domain.identity.RegionCode
 import com.retrovault.domain.identity.RegionVocabulary
@@ -36,6 +39,15 @@ data class DatSourceRef(
     val importedAtEpochMillis: Long,
     /** SHA1 of the source document where the importer computed one. */
     val sourceDigest: String? = null,
+    /**
+     * Which preservation project produced this dataset.
+     *
+     * Read from what the DAT says about itself, so it is provenance rather
+     * than a claim RetroVault makes. It explains results - "no Redump dataset
+     * is imported" - and never restricts what is consulted; that is decided by
+     * measured coverage (see [DatasetCoverage]).
+     */
+    val kind: DatasetKind = DatasetKind.UNKNOWN,
 ) {
     init {
         require(provider.isNotBlank()) { "DAT provider must not be blank" }
@@ -71,6 +83,15 @@ data class DumpRecord(
     val size: Long?,
     val hashes: HashDigests,
     val platform: PlatformName,
+    /**
+     * The medium this dump came from, read from the catalogued rom name.
+     *
+     * First-class rather than derived on demand, because it is what lets
+     * RetroVault measure what a dataset covers and tell "this library is
+     * uncatalogued" apart from "this library is unidentifiable"
+     * (Constitution section 23).
+     */
+    val mediaType: MediaType,
     val canonicalTitle: String,
     val normalizedTitle: NormalizedTitle,
     val regions: List<RegionCode>,
@@ -152,6 +173,7 @@ data class DumpRecord(
             romName: String,
             size: Long?,
             hashes: HashDigests,
+            mediaType: MediaType = MediaTypeVocabulary.forFilename(romName),
             status: DumpStatus = DumpStatus.GOOD,
             externalId: String? = null,
             declaredRegions: List<RegionCode> = emptyList(),
@@ -168,6 +190,7 @@ data class DumpRecord(
                 size = size,
                 hashes = hashes,
                 platform = source.platform,
+                mediaType = mediaType,
                 canonicalTitle = parsed.titleText.ifBlank { setName },
                 normalizedTitle = TitleNormalizer.normalize(parsed.titleText.ifBlank { setName }),
                 regions = regions,

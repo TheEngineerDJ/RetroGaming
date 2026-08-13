@@ -24,6 +24,8 @@ import com.retrovault.data.SqlScanSessionRepository
 import com.retrovault.data.jdbc.JdbcSqlDatabase
 import com.retrovault.dat.DatByteSource
 import com.retrovault.dat.LogiqxDatReader
+import com.retrovault.domain.identity.DatasetKind
+import com.retrovault.domain.identity.MediaType
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
 import com.retrovault.domain.rename.PlanIssue
@@ -612,6 +614,191 @@ class VerticalSliceEndToEndTest {
             ResolutionState.EXACT_HASH,
             resolution.state,
             "Archiver bookkeeping must not turn a single-ROM archive into an ambiguous one",
+        )
+    }
+
+
+    // ------------------------------------------------------------------
+    // Optical media: PSP UMD images against Redump and non-Redump datasets
+    // ------------------------------------------------------------------
+
+    private fun writePspDat(bytes: ByteArray, name: String = "Some PSP Game (USA)") = writeDat(
+        "redump-psp.dat",
+        """
+        <datafile>
+          <header>
+            <name>Sony - PlayStation Portable</name>
+            <description>Sony - PlayStation Portable - Redump</description>
+            <version>1</version>
+            <author>Redump</author>
+          </header>
+          <game name="$name">
+            <rom name="$name.iso" size="${bytes.size}"
+                 crc="${crc32(bytes)}" md5="${md5(bytes)}" sha1="${sha1(bytes)}"/>
+          </game>
+        </datafile>
+        """.trimIndent(),
+    )
+
+    private fun writeCartridgeDat(bytes: ByteArray) = writeDat(
+        "no-intro-snes.dat",
+        """
+        <datafile>
+          <header>
+            <name>Nintendo - Super Nintendo Entertainment System</name>
+            <version>1</version>
+            <author>No-Intro</author>
+          </header>
+          <game name="Super Mario World (USA)">
+            <rom name="Super Mario World (USA).sfc" size="${bytes.size}"
+                 crc="${crc32(bytes)}" sha1="${sha1(bytes)}"/>
+          </game>
+        </datafile>
+        """.trimIndent(),
+    )
+
+    @Test
+    fun `a psp iso is verified against a redump dataset and renamed`() = runTest {
+        val umd = payload(seed = 51, size = 65_536)
+        writePspDat(umd)
+        writeFile("psp/ULUS12345.iso", umd)
+        importDat(root.resolve("redump-psp.dat"))
+
+        val (sessionId, events) = scan()
+        val resolution = resolutionsByName(events).getValue("ULUS12345.iso")
+
+        assertTrue(
+            resolution.state.isExact,
+            "A UMD image is identified by its bytes like any other dump: ${resolution.state}",
+        )
+        assertTrue(resolution.isVerified)
+        assertEquals(MediaType.OPTICAL_DISC, resolution.selected?.record?.mediaType)
+        assertEquals(DatasetKind.REDUMP, resolution.selected?.record?.source?.kind)
+
+        val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+        val plan =
+            (GenerateRenamePlanUseCase(observations, clock, ids).generate(sessionId) as Outcome.Success).value
+        val result = ExecuteRenamePlanUseCase(validate, LocalRenameExecutor(), journal, clock, ids)
+            .execute(plan)
+
+        assertTrue((result as Outcome.Success).value.summary.isFullySuccessful)
+        assertEquals(
+            listOf("Some PSP Game (USA).iso"),
+            root.resolve("psp").listDirectoryEntries().map { it.name },
+        )
+    }
+
+    @Test
+    fun `a psp library scanned against a cartridge dataset is reported as uncatalogued`() = runTest {
+        val umd = payload(seed = 52, size = 65_536)
+        val cart = payload(seed = 53)
+        writeCartridgeDat(cart)
+        writeFile("psp/ULUS12345.iso", umd)
+        importDat(root.resolve("no-intro-snes.dat"))
+
+        val (sessionId, events) = scan()
+        val resolution = resolutionsByName(events).getValue("ULUS12345.iso")
+
+        assertEquals(
+            ResolutionState.OUT_OF_CATALOGUE_SCOPE,
+            resolution.state,
+            "The right dataset is missing; that is not the same as the file being unknown",
+        )
+        assertTrue(
+            resolution.explanation.any { it.description.contains("optical disc") },
+            "The user must be told which medium is uncovered: " +
+                resolution.explanation.map { it.description },
+        )
+
+        val session = (sessions.find(sessionId) as Outcome.Success).value
+        assertEquals(1, session.summary.outOfCatalogueScope)
+        assertEquals(0, session.summary.unmatched, "Out-of-scope files must not inflate the unmatched count")
+    }
+
+    @Test
+    fun `an uncatalogued psp iso is left untouched and explained`() = runTest {
+        val umd = payload(seed = 54, size = 65_536)
+        writeCartridgeDat(payload(seed = 55))
+        writeFile("psp/ULUS12345.iso", umd)
+        importDat(root.resolve("no-intro-snes.dat"))
+
+        val (sessionId, _) = scan()
+        val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+        val plan =
+            (GenerateRenamePlanUseCase(observations, clock, ids).generate(sessionId) as Outcome.Success).value
+        val preview = PreviewRenamePlanUseCase(validate).preview(plan)
+
+        assertEquals(PlanVerdict.NOTHING_TO_DO, preview.validation.verdict)
+        val row = preview.rows.single { it.currentName == "ULUS12345.iso" }
+        assertEquals(PlannedAction.SKIP_UNRESOLVED, row.action)
+        assertEquals("NONE", row.identityBasis)
+        assertTrue(
+            row.reasons.any { it.contains("no imported dataset covers") } ||
+                row.warnings.any { it.contains("covers this kind of media") },
+            "The preview must say what to do about it: ${row.reasons + row.warnings}",
+        )
+        assertEquals(
+            listOf("ULUS12345.iso"),
+            root.resolve("psp").listDirectoryEntries().map { it.name },
+            "Nothing may be renamed",
+        )
+    }
+
+    @Test
+    fun `importing the disc dataset turns an uncatalogued library into a verified one`() = runTest {
+        val umd = payload(seed = 56, size = 65_536)
+        writeCartridgeDat(payload(seed = 57))
+        writeFile("psp/ULUS12345.iso", umd)
+        importDat(root.resolve("no-intro-snes.dat"))
+
+        val before = resolutionsByName(scan().second).getValue("ULUS12345.iso")
+        assertEquals(ResolutionState.OUT_OF_CATALOGUE_SCOPE, before.state)
+
+        writePspDat(umd)
+        importDat(root.resolve("redump-psp.dat"))
+
+        val after = resolutionsByName(scan().second).getValue("ULUS12345.iso")
+        assertTrue(after.state.isExact, after.state.name)
+        assertTrue(after.isVerified)
+    }
+
+    @Test
+    fun `a disc dataset that does not list this disc reports absence, not uncovered media`() = runTest {
+        writePspDat(payload(seed = 58, size = 65_536), name = "Another PSP Game (USA)")
+        writeFile("psp/Mystery Game (USA).iso", payload(seed = 59, size = 32_768))
+        importDat(root.resolve("redump-psp.dat"))
+
+        val resolution = resolutionsByName(scan().second).getValue("Mystery Game (USA).iso")
+
+        assertEquals(ResolutionState.NO_MATCH, resolution.state)
+        assertFalse(
+            resolution.explanation.any { it.description.contains("no imported dataset catalogues") },
+            "The medium is covered, so nothing may claim otherwise",
+        )
+    }
+
+    @Test
+    fun `a mixed library identifies each medium against the dataset that covers it`() = runTest {
+        val umd = payload(seed = 60, size = 65_536)
+        val cart = payload(seed = 61)
+        writePspDat(umd)
+        writeCartridgeDat(cart)
+        writeFile("psp/ULUS12345.iso", umd)
+        writeFile("snes/smw.sfc", cart)
+        importDat(root.resolve("redump-psp.dat"))
+        importDat(root.resolve("no-intro-snes.dat"))
+
+        val resolutions = resolutionsByName(scan().second)
+
+        assertTrue(resolutions.getValue("ULUS12345.iso").state.isExact)
+        assertTrue(resolutions.getValue("smw.sfc").state.isExact)
+        assertEquals(
+            MediaType.OPTICAL_DISC,
+            resolutions.getValue("ULUS12345.iso").selected?.record?.mediaType,
+        )
+        assertEquals(
+            MediaType.CARTRIDGE,
+            resolutions.getValue("smw.sfc").selected?.record?.mediaType,
         )
     }
 

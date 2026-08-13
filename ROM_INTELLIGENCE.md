@@ -103,6 +103,16 @@ Filename generation occurs only after identity has been established.
 
 ## 6. Matching pipeline
 
+### Stage 0 — Media and coverage
+
+Determine the artifact's media type from its identity-bearing name (the contained entry for an archive, the file itself otherwise).
+
+Determine whether any imported dataset covers that medium, using coverage **measured** from the records each dataset indexes.
+
+If no dataset covers the medium — or nothing has been imported — stop here and report the artifact as out of catalogue scope. No content is read. The result names the medium, names what the imported datasets do cover, and states the remedy.
+
+Every uncertain case continues into the ladder. An unknown medium, a dataset of unrecognised media, or unmeasured coverage all mean "proceed": a scope judgement must never cause a missed match.
+
 ### Stage 1 — File discovery
 
 Enumerate files through platform-specific storage adapters.
@@ -121,6 +131,8 @@ Use low-cost signals first:
 
 Files whose byte size appears nowhere in relevant DAT indexes may skip cryptographic hashing unless another rule explicitly requires hashing.
 
+Records for which the dataset states no size are always considered: an unknown size cannot rule a record out.
+
 ### Stage 3 — CRC32
 
 CRC32 may be used as a fast candidate filter.
@@ -132,6 +144,8 @@ Ambiguous CRC matches must escalate.
 ### Stage 4 — MD5 / SHA1
 
 Calculate stronger hashes only when required.
+
+Where a dataset offers a cryptographic hash — which No-Intro and Redump records essentially always do — escalation is expected, so the digests may be computed in the same pass as CRC32 to avoid reading the artifact twice. This changes when bytes are read, never what is concluded from them.
 
 Hash calculation must be asynchronous and I/O-bound.
 
@@ -275,6 +289,45 @@ A naming profile must define:
 - special-status tags
 - illegal filesystem characters
 - maximum length handling
+
+## 10A. Media type
+
+Media type is first-class metadata on both catalogued dumps and observations, drawn from a versioned controlled vocabulary.
+
+Recognised classes include cartridge, optical disc, floppy disk, tape, hard disk, digital download and arcade board, plus `UNKNOWN` as a valid escape state.
+
+Rules:
+
+- Media type is derived from a name and is therefore representation, never identity.
+- It must never on its own exclude a candidate. A medium disagreement is a weighted contradiction with a visible reason, not an exclusion.
+- Extensions belonging to more than one medium (`.bin`, `.img`, `.rom`) resolve to `UNKNOWN`. An unknown medium only widens what is considered.
+- A cartridge record must not outrank a disc record when the artifact on disk is a disc image.
+
+Optical-disc images — including PSP UMD rips as `.iso`, `.cso` and `.pbp` — are identified by the same evidence ladder as any other dump. They are never treated as unsupported for being large or for being discs.
+
+## 10B. Dataset provenance and coverage
+
+Every imported dataset records the preservation project that produced it, read from the DAT header and the user-supplied provider namespace. Provenance explains results; it never restricts what is consulted.
+
+Coverage is measured per dataset from the media types of the records it indexes, counting only records fit for matching. A dataset whose disc entries are all `nodump` placeholders does not cover discs.
+
+Coverage is read once per scan, not once per artifact.
+
+## 10C. Reporting absence
+
+The engine distinguishes:
+
+- **not listed** — datasets cover this medium, none describes this artifact;
+- **not covered** — no dataset covers this medium;
+- **nothing imported** — the catalogue cannot speak.
+
+These are separate result states, separately counted in a scan summary, and separately worded. "No catalogue match" is never presented as "unknown game".
+
+## 10D. Verified against inferred identity
+
+Alongside its confidence label, every result carries an identity basis: verified content, structural, inferred, or none.
+
+Filename and text fallback remain required capabilities and always produce an *inferred* basis. Inferred identity is a usable result and is never presented as content verification; it never renames without confirmation.
 
 ## 11. Rename safety
 

@@ -336,3 +336,16 @@ Those belong to domain/application/infrastructure layers.
 ## 25. Guiding rule
 
 **Store what was observed, what was concluded, why it was concluded, and what the user decided. Never store only the conclusion.**
+
+
+## Schema version 3 — media type and dataset provenance
+
+`dump_record.media_type` (`TEXT NOT NULL DEFAULT 'UNKNOWN'`) records the medium of each catalogued dump. `dat_source.kind` records the preservation project that produced the dataset. `scan_session.out_of_scope` counts artifacts no imported dataset covers, kept apart from `unmatched` because the two call for different action.
+
+Existing rows are backfilled from the rom-name extensions already stored, so an upgraded catalogue gains coverage without a re-import. The backfill is generated from the same vocabulary the live classification uses, so the two cannot drift. Extensions belonging to more than one medium are left `UNKNOWN`, which reads as "covers everything" and therefore never narrows a search.
+
+`idx_dump_record_media(source_id, media_type)` serves the coverage aggregation, which is read once per scan.
+
+### Migration hazard, recorded
+
+Rebuilding a parent table under enforced foreign keys is destructive: `DROP TABLE dump_record` performs an implicit delete that fires `ON DELETE CASCADE` and empties `dump_hash` and `dump_title_token`. Version 2 rebuilds `dump_record`, so it copies the dependent tables onto the new parent *before* dropping the old one. Any future migration that rebuilds a parent table must do the same and must be covered by a test that seeds the previous version and asserts the children survive.

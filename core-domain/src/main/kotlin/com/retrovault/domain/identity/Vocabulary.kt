@@ -12,6 +12,8 @@ object VocabularyVersions {
     const val REGION = "region-v1"
     const val LANGUAGE = "language-v1"
     const val TOKEN = "token-v1"
+    const val MEDIA = "media-v1"
+    const val DATASET_KIND = "dataset-kind-v1"
 }
 
 /**

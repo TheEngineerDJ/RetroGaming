@@ -1,5 +1,7 @@
 package com.retrovault.data
 
+import com.retrovault.domain.identity.MediaTypeVocabulary
+
 /**
  * Schema and forward-only migrations.
  *
@@ -13,7 +15,7 @@ package com.retrovault.data
  */
 object Schema {
 
-    const val CURRENT_VERSION: Int = 2
+    const val CURRENT_VERSION: Int = 3
 
     /**
      * Applies every migration needed to bring [database] up to date.
@@ -60,7 +62,8 @@ object Schema {
             .query("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1") { it.getInt(0) }
             .firstOrNull() ?: 0
 
-    private val migrations: Map<Int, List<String>> = mapOf(1 to version1(), 2 to version2())
+    private val migrations: Map<Int, List<String>> =
+        mapOf(1 to version1(), 2 to version2(), 3 to version3())
 
     private fun version1(): List<String> = listOf(
         // --- Imported datasets -------------------------------------------
@@ -381,4 +384,52 @@ object Schema {
         // it back to the user.
         "ALTER TABLE rename_operation ADD COLUMN intermediate_name TEXT",
     )
+
+    /**
+     * Makes media type and dataset provenance first-class.
+     *
+     * Constitution section 22 and section 23 require media-specific evidence and
+     * forbid a universal "one file = one hash = one game" assumption. Until now
+     * the schema had no place to record what medium a dump came from, so a PSP
+     * UMD image and a SNES cartridge dump were indistinguishable rows and
+     * RetroVault could not tell a user that no imported dataset covers discs.
+     *
+     * `dump_record.media_type` is what makes coverage measurable, and
+     * `dat_source.kind` records which preservation project a dataset came from.
+     * Existing rows are backfilled from the rom-name extensions already stored,
+     * so an upgraded catalogue gains coverage without a re-import. Extensions
+     * that belong to more than one medium are left UNKNOWN, which reads as
+     * "covers everything" and therefore never narrows what is consulted.
+     */
+    private fun version3(): List<String> = buildList {
+        add("ALTER TABLE dump_record ADD COLUMN media_type TEXT NOT NULL DEFAULT 'UNKNOWN'")
+        add("ALTER TABLE dat_source ADD COLUMN kind TEXT NOT NULL DEFAULT 'UNKNOWN'")
+
+        MediaTypeBackfill.extensionsByMedia().forEach { (media, extensions) ->
+            val predicate = extensions.joinToString(" OR ") { "LOWER(rom_name) LIKE '%.$it'" }
+            add("UPDATE dump_record SET media_type = '$media' WHERE $predicate")
+        }
+
+        add("CREATE INDEX idx_dump_record_media ON dump_record(source_id, media_type)")
+
+        // Scans now report "no dataset covers this medium" separately from
+        // "not listed". Counting them together would hide the one problem the
+        // user can actually fix.
+        add("ALTER TABLE scan_session ADD COLUMN out_of_scope INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/**
+ * The extension-to-medium table, in the form the migration needs.
+ *
+ * Deliberately derived from the domain vocabulary rather than duplicated here:
+ * a backfill that disagreed with live classification would produce a catalogue
+ * whose stored media types drift from what a re-import would produce.
+ */
+internal object MediaTypeBackfill {
+    fun extensionsByMedia(): Map<String, List<String>> =
+        MediaTypeVocabulary.knownExtensions()
+            .entries
+            .groupBy({ it.value.name }, { it.key })
+            .toSortedMap()
 }

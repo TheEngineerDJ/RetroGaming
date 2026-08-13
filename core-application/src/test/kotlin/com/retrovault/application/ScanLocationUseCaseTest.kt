@@ -1,6 +1,8 @@
 package com.retrovault.application
 
+import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.catalog.DatSourceRef
+import com.retrovault.domain.catalog.DatasetCoverage
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.identity.DatSourceId
 import com.retrovault.domain.identity.DumpRecordId
@@ -70,7 +72,8 @@ class ScanLocationUseCaseTest {
     }
 
     private class FakeCatalog(private val records: List<DumpRecord>) : DumpCatalog {
-        override suspend fun findBySize(size: Long) = records.filter { it.size == size }
+        override suspend fun findBySize(size: Long) =
+            records.filter { it.size == null || it.size == size }
 
         override suspend fun findByHash(hash: HashValue) =
             records.filter { it.hashes[hash.algorithm] == hash }
@@ -89,6 +92,18 @@ class ScanLocationUseCaseTest {
                 platform = PlatformName("Test"),
                 importedAtEpochMillis = 0,
             ),
+        )
+
+        // Measured the same way the real catalogue measures it: from the media
+        // the indexed records actually carry.
+        override suspend fun coverage() = CatalogueCoverage(
+            sources().map { source ->
+                DatasetCoverage(
+                    source = source,
+                    mediaTypes = records.mapTo(mutableSetOf()) { it.mediaType },
+                    recordCount = records.size,
+                )
+            },
         )
     }
 

@@ -364,7 +364,13 @@ object RenamePlanBuilder {
             "Strong evidence contradicts the best candidate, so the identity is unresolved."
 
         ResolutionState.NO_MATCH ->
-            "No catalogue record matches this file. It is left untouched."
+            "The imported datasets cover this kind of file but do not list this one. That may mean a " +
+                "modified dump, or a release nobody has catalogued yet. It is left untouched."
+
+        ResolutionState.OUT_OF_CATALOGUE_SCOPE ->
+            "No imported dataset covers this kind of media, so RetroVault has nothing to compare this " +
+                "file against. Import a dataset for this platform and scan again. This is not a " +
+                "statement that the file is unknown."
 
         ResolutionState.UNSUPPORTED ->
             "This file cannot be identified by the current pipeline."

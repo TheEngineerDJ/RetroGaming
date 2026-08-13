@@ -82,6 +82,7 @@ data class AutomationPolicy(
             ResolutionState.AMBIGUOUS,
             ResolutionState.CONFLICT,
             ResolutionState.NO_MATCH,
+            ResolutionState.OUT_OF_CATALOGUE_SCOPE,
             ResolutionState.UNSUPPORTED,
             -> AutomationDecision.FORBIDDEN
         }

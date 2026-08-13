@@ -854,3 +854,21 @@ A proposed new entity should exist only when collapsing it into another entity w
 A proposed new relationship should exist when the connection itself carries meaning, evidence, conditions, or history.
 
 This prevents ontology bloat while protecting important distinctions.
+
+
+## Media type, dataset coverage and identity basis
+
+`MediaType` is a versioned controlled vocabulary (`media-v1`) covering cartridge, optical disc, floppy disk, tape, hard disk, digital download and arcade board, with `UNKNOWN` as a valid escape state.
+
+- `DumpRecord.mediaType` is stored, derived at import from the catalogued rom name.
+- `FileObservation.mediaType` is computed from the identity-bearing name, so it can always be recomputed from the observation and never becomes a second source of truth.
+
+`DatasetKind` (`dataset-kind-v1`) records which preservation project produced a dataset — No-Intro, Redump, TOSEC, MAME, GoodTools or unknown — read from what the DAT states about itself. It is provenance, not authority: nothing consults it to decide what to search.
+
+`DatasetCoverage` is what one dataset actually indexes, measured from the media types of its matchable records. `CatalogueCoverage` aggregates them; `CatalogueCoverage.UNMEASURED` means a caller did not look, and is not the same as "nothing is covered".
+
+`DatasetCompatibility.assess` is a pure function returning `Covered`, `NoDatasets` or `MediaNotCovered`. Every uncertain input resolves to `Covered`.
+
+`ResolutionState` gains `OUT_OF_CATALOGUE_SCOPE`, distinct from `NO_MATCH`. `NO_MATCH` means the datasets cover this medium and do not list this artifact; `OUT_OF_CATALOGUE_SCOPE` means they never had standing to say anything.
+
+`IdentityBasis` — `VERIFIED_CONTENT`, `STRUCTURAL`, `INFERRED`, `NONE` — is derived from the resolution state and answers "resting on what", where confidence answers "how sure". A state that may carry a selected identity always has a basis other than `NONE`, and a state that may not always has `NONE`.

@@ -5,18 +5,22 @@ import com.retrovault.application.ResolvedObservation
 import com.retrovault.application.ScanSessionRecord
 import com.retrovault.application.ScanSummary
 import com.retrovault.data.jdbc.JdbcSqlDatabase
+import com.retrovault.domain.catalog.CoverageAssessment
 import com.retrovault.domain.catalog.DatSourceRef
+import com.retrovault.domain.catalog.DatasetCompatibility
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.evidence.Evidence
 import com.retrovault.domain.evidence.EvidenceStrength
 import com.retrovault.domain.evidence.MatchSignal
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.DatSourceId
+import com.retrovault.domain.identity.DatasetKind
 import com.retrovault.domain.identity.DumpRecordId
 import com.retrovault.domain.identity.DumpStatus
 import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.HashDigests
 import com.retrovault.domain.identity.HashValue
+import com.retrovault.domain.identity.MediaType
 import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.PlanEntryId
 import com.retrovault.domain.identity.PlatformName
@@ -221,6 +225,109 @@ class PersistenceTest {
             .single()
 
         assertEquals("BAD_DUMP" to 0, stored)
+    }
+
+    // ------------------------------------------------------------------
+    // Media coverage
+    // ------------------------------------------------------------------
+
+    private val redumpPsp = DatSourceRef(
+        id = DatSourceId("redump:PSP:1"),
+        provider = "redump",
+        setName = "Sony - PlayStation Portable",
+        version = "1",
+        platform = PlatformName("Sony - PlayStation Portable"),
+        importedAtEpochMillis = 1_700_000_000_000L,
+        kind = DatasetKind.REDUMP,
+    )
+
+    private fun discRecord(setName: String, crc: String, id: String) = DumpRecord.derive(
+        id = DumpRecordId(id),
+        source = redumpPsp,
+        setName = setName,
+        romName = "$setName.iso",
+        size = 1_500_000_000L,
+        hashes = HashDigests.of(HashValue.of(HashAlgorithm.CRC32, crc)),
+    )
+
+    @Test
+    fun `coverage is measured from the media the indexed records carry`() = runTest {
+        importReady(record("Cart Game (USA)", crc = "11111111", id = "cart"))
+        importReady(discRecord("Disc Game (USA)", crc = "22222222", id = "disc"), from = redumpPsp)
+
+        val coverage = catalog.coverage()
+
+        assertEquals(2, coverage.datasets.size)
+        assertEquals(
+            setOf(MediaType.CARTRIDGE, MediaType.OPTICAL_DISC),
+            coverage.recognisedMediaTypes,
+        )
+        assertEquals(
+            CoverageAssessment.Covered,
+            DatasetCompatibility.assess(MediaType.OPTICAL_DISC, coverage),
+        )
+    }
+
+    @Test
+    fun `a cartridge-only catalogue reports optical discs as uncovered`() = runTest {
+        importReady(record("Cart Game (USA)", crc = "11111111", id = "cart"))
+
+        val assessment = DatasetCompatibility.assess(MediaType.OPTICAL_DISC, catalog.coverage())
+
+        assertEquals(
+            setOf(MediaType.CARTRIDGE),
+            assertIs<CoverageAssessment.MediaNotCovered>(assessment).available,
+        )
+    }
+
+    @Test
+    fun `an uncommitted dataset contributes no coverage`() = runTest {
+        catalog.beginImport(redumpPsp)
+        catalog.writeBatch(redumpPsp.id, listOf(discRecord("Disc Game (USA)", "22222222", "disc")))
+
+        assertTrue(
+            catalog.coverage().datasets.isEmpty(),
+            "A half-imported dataset must not make RetroVault claim it searched discs",
+        )
+    }
+
+    @Test
+    fun `unmatchable records contribute no coverage`() = runTest {
+        // A dataset whose disc entries are all nodump placeholders has nothing
+        // searchable in it, so claiming it covers discs would be a lie the user
+        // cannot see through.
+        importReady(
+            DumpRecord.derive(
+                id = DumpRecordId("nodump-disc"),
+                source = redumpPsp,
+                setName = "Disc Game (USA)",
+                romName = "Disc Game (USA).iso",
+                size = 1_500_000_000L,
+                hashes = HashDigests.of(HashValue.of(HashAlgorithm.CRC32, "33333333")),
+                status = DumpStatus.NO_DUMP,
+            ),
+            from = redumpPsp,
+        )
+
+        assertTrue(catalog.coverage().recognisedMediaTypes.isEmpty())
+    }
+
+    @Test
+    fun `media type and dataset provenance survive a round trip`() = runTest {
+        importReady(discRecord("Disc Game (USA)", "22222222", "disc"), from = redumpPsp)
+
+        val loaded = catalog.findByHash(HashValue.of(HashAlgorithm.CRC32, "22222222")).single()
+
+        assertEquals(MediaType.OPTICAL_DISC, loaded.mediaType)
+        assertEquals(DatasetKind.REDUMP, loaded.source.kind)
+    }
+
+    @Test
+    fun `an empty catalogue reports no datasets rather than no match`() = runTest {
+        assertEquals(
+            CoverageAssessment.NoDatasets,
+            DatasetCompatibility.assess(MediaType.OPTICAL_DISC, catalog.coverage()),
+        )
     }
 
     @Test

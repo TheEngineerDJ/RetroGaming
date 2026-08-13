@@ -1,5 +1,6 @@
 package com.retrovault.application
 
+import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.catalog.DatSourceRef
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.identity.DatSourceId
@@ -104,6 +105,8 @@ interface RenameExecutor {
  * - [findByNormalizedTitle] returns candidates that share at least one token
  *   with the query. It is a recall-oriented index; scoring, ranking and
  *   rejection are the resolver's job, never the index's.
+ * - [coverage] reports what each ready dataset actually indexes, measured from
+ *   its records rather than assumed from its name.
  */
 interface DumpCatalog {
     suspend fun findBySize(size: Long): List<DumpRecord>
@@ -114,6 +117,15 @@ interface DumpCatalog {
 
     /** Datasets currently indexed, for reproducibility of a scan. */
     suspend fun sources(): List<DatSourceRef>
+
+    /**
+     * What the indexed datasets describe, per dataset.
+     *
+     * Read once per scan and handed to the resolver so that "no dataset covers
+     * optical discs" can be told apart from "the disc is not listed"
+     * (Constitution section 174).
+     */
+    suspend fun coverage(): CatalogueCoverage
 }
 
 /** Writing an imported dataset. */
@@ -195,7 +207,16 @@ data class ScanSummary(
     val strong: Int = 0,
     val reviewRequired: Int = 0,
     val ambiguous: Int = 0,
+    /**
+     * Files the datasets cover but do not list.
+     *
+     * Kept apart from [outOfCatalogueScope] because the two call for different
+     * action: this one may mean a bad dump or a release nobody has catalogued,
+     * while the other means the right dataset has not been imported.
+     */
     val unmatched: Int = 0,
+    /** Files no imported dataset covers the medium of. */
+    val outOfCatalogueScope: Int = 0,
     val failed: Int = 0,
     val hashesComputed: Int = 0,
     val hashingSkippedBySizeFilter: Int = 0,

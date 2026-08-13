@@ -3,12 +3,14 @@ package com.retrovault.data
 import com.retrovault.domain.catalog.DatSourceRef
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.identity.DatSourceId
+import com.retrovault.domain.identity.DatasetKind
 import com.retrovault.domain.identity.DumpRecordId
 import com.retrovault.domain.identity.DumpStatus
 import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.HashDigests
 import com.retrovault.domain.identity.HashValue
 import com.retrovault.domain.identity.LanguageCode
+import com.retrovault.domain.identity.MediaType
 import com.retrovault.domain.identity.PlatformName
 import com.retrovault.domain.identity.RegionCode
 import com.retrovault.domain.identity.ReleaseFlag
@@ -34,7 +36,7 @@ internal object RecordMapper {
      * `id, set_name, rom_name, size, platform, canonical_title, normalized_title,
      * revision, version, disc_number, status, external_id, regions, languages,
      * flags, source_id, provider, source_set_name, source_version,
-     * source_platform, imported_at, source_digest`
+     * source_platform, imported_at, source_digest, media_type, source_kind`
      */
     fun map(row: SqlRow): DumpRecord = DumpRecord(
         id = DumpRecordId(row.getString(0)),
@@ -46,12 +48,16 @@ internal object RecordMapper {
             platform = PlatformName(row.getString(19)),
             importedAtEpochMillis = row.getLong(20),
             sourceDigest = row.getStringOrNull(21),
+            kind = runCatching { DatasetKind.valueOf(row.getString(23)) }
+                .getOrDefault(DatasetKind.UNKNOWN),
         ),
         setName = row.getString(1),
         romName = row.getString(2),
         size = row.getLongOrNull(3),
         hashes = HashDigests.EMPTY,
         platform = PlatformName(row.getString(4)),
+        mediaType = runCatching { MediaType.valueOf(row.getString(22)) }
+            .getOrDefault(MediaType.UNKNOWN),
         canonicalTitle = row.getString(5),
         normalizedTitle = NormalizedTitle(row.getString(6)),
         regions = row.getString(12).splitList().map(::RegionCode),

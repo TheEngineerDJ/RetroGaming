@@ -2,8 +2,8 @@
 
 **Project Name:** RetroVault
 **Working Name:** RetroVault
-**Document Version:** 1.1
-**Last Updated:** 2026-08-12
+**Document Version:** 1.2
+**Last Updated:** 2026-08-13
 **Status:** Product and engineering authority
 
 ---
@@ -576,6 +576,58 @@ Redump's published disc records demonstrate the importance of track-level eviden
 
 Therefore the architecture must avoid a universal "one file = one hash = one game" assumption.
 
+### 23.1 Media type is first-class metadata
+
+Media type is not a display attribute and not a derived convenience. It is recorded on every catalogued dump and on every observation, and it is versioned like any other controlled vocabulary.
+
+A PSP UMD image, a Dreamcast GD-ROM rip and a SNES cartridge dump are different classes of artifact catalogued by different projects. Treating them as generic "ROMs" is what causes a fully catalogued library to appear unidentifiable.
+
+Media type is inferred from the artifact's name and is therefore representation, never identity. It follows that:
+
+- Media type must never, on its own, exclude a candidate. One release is legitimately preserved as `.cue`+`.bin`, `.chd` and `.iso`; a difference of form is not a difference of release.
+- A medium disagreement between a file and a catalogue record weakens that candidate and must be visible as a reason.
+- An extension that belongs to more than one medium — `.bin`, `.img`, `.rom` — must resolve to unknown rather than to a guess. An unknown medium only ever widens what RetroVault will consider.
+
+### 23.2 Optical-disc dumps are optical-disc dumps
+
+PSP UMD images, and disc images generally, are optical media. RetroVault must not apply cartridge-shaped assumptions to them, must not treat a large disc image as an unsupported artifact, and must identify them by the same evidence ladder as any other dump.
+
+---
+
+## 23A. Dataset provenance and coverage
+
+### 23A.1 Provenance is recorded
+
+Every imported dataset records which preservation project produced it, read from what the DAT states about itself. Provenance explains a result. It never restricts what RetroVault consults.
+
+### 23A.2 Coverage is measured, never assumed
+
+What a dataset covers is measured from the records it actually indexes — their media types, counted only for records fit for matching. A project's reputation is not evidence about the file in front of the user.
+
+A dataset whose records carry no recognisable medium is treated as covering everything. RetroVault's failure to recognise an extension must never become a refusal to search.
+
+### 23A.3 Incompatibility must be detected and stated
+
+When a scanned artifact's medium is covered by no imported dataset, RetroVault must say so, name the medium, name what the imported datasets do cover, and state the remedy.
+
+This check runs before any content is read. Hashing a 1.5 GB disc image against a cartridge-only catalogue cannot produce a match, and the honest answer is already available.
+
+---
+
+## 23B. Absence of a match is not a statement about the artifact
+
+"No catalogue record matches this file" must never be presented as "unknown game".
+
+RetroVault distinguishes at minimum:
+
+- **Not listed** — the imported datasets cover this kind of artifact and do not describe this one. Weak evidence about the file; it may be a modified dump, or a release nobody has catalogued.
+- **Not covered** — no imported dataset covers this kind of artifact at all. This is a fact about the catalogue and carries no information about the file whatsoever.
+- **Nothing imported** — the catalogue cannot speak at all.
+
+These have different remedies, so they are different states, are counted separately in a scan summary, and are worded differently to the user.
+
+Every uncertain case must resolve towards "covered", so that a scope judgement can never be the reason a real match is missed.
+
 ---
 
 ## 24. Performance philosophy
@@ -894,11 +946,26 @@ That is the product.
 
 ---
 
+## 38A. Verified identity and inferred identity
+
+Every resolution states what its identity claim rests on, independently of how confident it is:
+
+- **Verified** — a cryptographic hash of the content matched a catalogued digest.
+- **Structural** — size and CRC32 agree and the catalogue offered nothing stronger.
+- **Inferred** — identity was read from the filename or metadata. The bytes were not verified.
+- **None** — no identity was established.
+
+Confidence and basis answer different questions and must both be carried through the domain, the preview and the audit record. A user deciding whether to accept a rename needs both.
+
+Filename and text fallback remain a required capability. They are never presented as content verification.
+
+---
+
 ## 39. Current implementation reality
 
 At version 1.1, the repository contains a substantial JVM-tested implementation of the first vertical slice.
 
-The implementation has passed 224 JVM tests with zero failures in the development environment.
+The implementation has passed its JVM test suite with zero failures in the development environment.
 
 Android-specific modules have required real-device/Android-SDK verification separately.
 

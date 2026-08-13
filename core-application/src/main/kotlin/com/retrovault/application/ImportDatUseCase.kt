@@ -3,6 +3,7 @@ package com.retrovault.application
 import com.retrovault.domain.catalog.DatSourceRef
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.identity.DatSourceId
+import com.retrovault.domain.identity.DatasetKindVocabulary
 import com.retrovault.domain.identity.DumpRecordId
 import com.retrovault.domain.identity.DumpStatus
 import com.retrovault.domain.identity.HashDigests
@@ -195,6 +196,15 @@ class ImportDatUseCase(
         val setName = metadata?.name?.takeIf { it.isNotBlank() } ?: input.displayName
         val version = metadata?.version?.takeIf { it.isNotBlank() }
             ?: metadata?.date?.takeIf { it.isNotBlank() }
+        // Read from what the DAT says about itself. It is provenance the user
+        // can see and disagree with, and it never restricts what is consulted -
+        // coverage is measured from the records themselves.
+        val kind = DatasetKindVocabulary.infer(
+            provider = input.provider,
+            setName = setName,
+            author = metadata?.author,
+            homepage = metadata?.description,
+        )
         return DatSourceRef(
             id = DatSourceId("${input.provider}:$setName:${version ?: "unversioned"}"),
             provider = input.provider,
@@ -202,6 +212,7 @@ class ImportDatUseCase(
             version = version,
             platform = PlatformName(setName),
             importedAtEpochMillis = clock.nowEpochMillis(),
+            kind = kind,
         )
     }
 

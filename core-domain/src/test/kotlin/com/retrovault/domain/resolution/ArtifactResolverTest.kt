@@ -1,11 +1,13 @@
 package com.retrovault.domain.resolution
 
 import com.retrovault.domain.Fixtures
+import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.TestCatalogDriver
 import com.retrovault.domain.evidence.MatchSignal
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.HashDigests
+import com.retrovault.domain.identity.MediaType
 import com.retrovault.domain.policy.AutomationDecision
 import com.retrovault.domain.policy.AutomationPolicy
 import kotlin.test.Test
@@ -403,6 +405,30 @@ class ArtifactResolverTest {
     fun `an empty catalogue never matches anything`() {
         val driver = TestCatalogDriver(records = emptyList())
         val resolution = driver.resolve(Fixtures.observation("Super Mario World (USA).sfc"))
+
+        assertNull(resolution.selected)
+        assertEquals(
+            ResolutionState.OUT_OF_CATALOGUE_SCOPE,
+            resolution.state,
+            "With nothing imported the catalogue has no standing to call a file unmatched",
+        )
+        assertTrue(
+            resolution.explanation.any { it.signal == MatchSignal.NoDatasetsImported },
+            "The reason must name the empty catalogue, not the file",
+        )
+    }
+
+    @Test
+    fun `a caller that did not measure coverage still reports a plain absence of a match`() {
+        // Backwards-compatible honesty: without measured coverage the resolver
+        // makes no claim about scope, so it must not invent one.
+        val driver = TestCatalogDriver(
+            records = emptyList(),
+            coverage = CatalogueCoverage.UNMEASURED,
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("Super Mario World (USA).sfc"))
+
         assertEquals(ResolutionState.NO_MATCH, resolution.state)
     }
 
@@ -788,5 +814,258 @@ class ArtifactResolverTest {
             "An absent size cannot contradict anything",
         )
         assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+    }
+
+    // ------------------------------------------------------------------
+    // Optical media: the PSP UMD case
+    // ------------------------------------------------------------------
+
+    private val redump = Fixtures.source(provider = "redump", platform = Fixtures.psp)
+    private val noIntroSnes = Fixtures.source(provider = "no_intro", platform = Fixtures.snes)
+
+    private fun pspRecord(
+        setName: String = "Some PSP Game (USA)",
+        hashes: HashDigests = Fixtures.digests(goodCrc, goodSha1),
+        size: Long? = 1_500_000_000L,
+    ) = Fixtures.record(
+        setName = setName,
+        romName = "$setName.iso",
+        size = size,
+        hashes = hashes,
+        source = redump,
+        id = "redump:$setName",
+    )
+
+    @Test
+    fun `a psp iso is treated as optical disc media`() {
+        val observation = Fixtures.observation("Some PSP Game (USA).iso", size = 1_500_000_000L)
+
+        assertEquals(MediaType.OPTICAL_DISC, observation.mediaType)
+    }
+
+    @Test
+    fun `a psp iso matched against a redump dataset verifies exactly`() {
+        val record = pspRecord()
+        val driver = TestCatalogDriver(
+            records = listOf(record),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(
+            Fixtures.observation("umd-rip-whatever.iso", size = 1_500_000_000L),
+        )
+
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+        assertEquals(IdentityBasis.VERIFIED_CONTENT, resolution.identityBasis)
+        assertTrue(resolution.isVerified)
+        assertEquals(record.id, resolution.selected?.record?.id)
+        assertEquals(MediaType.OPTICAL_DISC, resolution.selected?.record?.mediaType)
+    }
+
+    @Test
+    fun `a psp library scanned against a cartridge dataset is uncatalogued, not unidentified`() {
+        // The case this whole mechanism exists for. Reporting NO_MATCH here
+        // tells the user their files are unrecognisable; the truth is that the
+        // right dataset has not been imported, and the remedy is different.
+        val cartridgeOnly = Fixtures.record(
+            setName = "Super Mario World (USA)",
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+            source = noIntroSnes,
+        )
+        val driver = TestCatalogDriver(records = listOf(cartridgeOnly))
+
+        val resolution = driver.resolve(
+            Fixtures.observation("Some PSP Game (USA).iso", size = 1_500_000_000L),
+        )
+
+        assertEquals(ResolutionState.OUT_OF_CATALOGUE_SCOPE, resolution.state)
+        assertNull(resolution.selected)
+        assertEquals(IdentityBasis.NONE, resolution.identityBasis)
+        val signal = resolution.explanation.map { it.signal }.filterIsInstance<MatchSignal.MediaNotCovered>()
+        assertEquals(MediaType.OPTICAL_DISC, signal.single().observed)
+        assertEquals(setOf(MediaType.CARTRIDGE), signal.single().available)
+    }
+
+    @Test
+    fun `an out of scope file is never hashed`() {
+        // Constitution section 24: avoid unnecessary work before avoiding
+        // unnecessary I/O. Reading 1.5 GB to prove a cartridge dataset does not
+        // list a disc is the definition of unnecessary.
+        val driver = TestCatalogDriver(
+            records = listOf(
+                Fixtures.record("Super Mario World (USA)", source = noIntroSnes),
+            ),
+        )
+
+        driver.resolve(Fixtures.observation("Some PSP Game (USA).iso", size = 1_500_000_000L))
+
+        assertTrue(
+            driver.requests.none { it is EvidenceRequest.ComputeHashes },
+            "No bytes should be read for a file no dataset covers: ${driver.requests}",
+        )
+    }
+
+    @Test
+    fun `a disc dataset that simply does not list this disc reports a plain absence`() {
+        // Distinct from out-of-scope: the catalogue does cover discs and still
+        // does not describe this one, which is weak evidence about the file.
+        val other = pspRecord(setName = "Another PSP Game (USA)")
+        val driver = TestCatalogDriver(
+            records = listOf(other),
+            content = mapOf(null to Fixtures.digests(Fixtures.crc("11223344"))),
+        )
+
+        val resolution = driver.resolve(
+            Fixtures.observation("Unlisted PSP Game (USA).iso", size = 900_000_000L),
+        )
+
+        assertEquals(ResolutionState.NO_MATCH, resolution.state)
+        assertTrue(
+            resolution.explanation.none { it.signal is MatchSignal.MediaNotCovered },
+            "The medium is covered, so nothing should claim otherwise",
+        )
+    }
+
+    @Test
+    fun `a mixed catalogue covers a psp library once a disc dataset is imported`() {
+        val driver = TestCatalogDriver(
+            records = listOf(
+                Fixtures.record("Super Mario World (USA)", source = noIntroSnes),
+                pspRecord(),
+            ),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        )
+
+        val resolution = driver.resolve(
+            Fixtures.observation("Some PSP Game (USA).iso", size = 1_500_000_000L),
+        )
+
+        assertEquals(ResolutionState.EXACT_HASH, resolution.state)
+    }
+
+    @Test
+    fun `a cartridge record never outranks a disc record for a disc image`() {
+        // Both titles match. The medium is what separates them, and it must
+        // rank rather than exclude - the same release can exist in both forms.
+        val disc = pspRecord(setName = "Some Game (USA)", hashes = HashDigests.EMPTY, size = 700_000_000L)
+        val cartridge = Fixtures.record(
+            setName = "Some Game (USA)",
+            size = 700_000_000L,
+            source = noIntroSnes,
+            id = "no_intro:cart",
+        )
+        val driver = TestCatalogDriver(records = listOf(disc, cartridge))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).iso", size = 700_000_000L))
+
+        assertEquals(disc.id, resolution.selected?.record?.id)
+        val rejected = resolution.candidates.single { it.record.id == cartridge.id }
+        assertTrue(
+            rejected.contradicting.any { it.signal is MatchSignal.MediaTypeMismatch },
+            "The rejected candidate must carry the reason it lost",
+        )
+        assertFalse(
+            rejected.isExcluded,
+            "A medium disagreement weakens a candidate; it does not rule it out",
+        )
+    }
+
+    @Test
+    fun `a disc preserved in another form is still proposed`() {
+        // The user has a `.chd`; Redump lists the `.cue`. Both are optical
+        // media, so nothing here should even register as a disagreement.
+        val record = Fixtures.record(
+            setName = "Some Game (USA)",
+            romName = "Some Game (USA).cue",
+            size = 700_000_000L,
+            source = redump,
+        )
+        val driver = TestCatalogDriver(records = listOf(record))
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).chd", size = 700_000_000L))
+
+        assertEquals(record.id, resolution.selected?.record?.id)
+        assertTrue(
+            resolution.selected!!.contradicting.none { it.signal is MatchSignal.MediaTypeMismatch },
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // Verified against inferred
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a hash match is verified and a filename match is only inferred`() {
+        val hashed = Fixtures.record(
+            setName = "Some PSP Game (USA)",
+            romName = "Some PSP Game (USA).iso",
+            size = 1_500_000_000L,
+            hashes = Fixtures.digests(goodCrc, goodSha1),
+            source = redump,
+        )
+        val verified = TestCatalogDriver(
+            records = listOf(hashed),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+        ).resolve(Fixtures.observation("anything.iso", size = 1_500_000_000L))
+
+        val nameOnly = Fixtures.record(
+            setName = "Some PSP Game (USA)",
+            romName = "Some PSP Game (USA).iso",
+            size = 1_500_000_000L,
+            hashes = HashDigests.EMPTY,
+            source = redump,
+        )
+        val inferred = TestCatalogDriver(records = listOf(nameOnly))
+            .resolve(Fixtures.observation("Some PSP Game (USA).iso", size = 1_500_000_000L))
+
+        assertTrue(verified.isVerified)
+        assertEquals(IdentityBasis.VERIFIED_CONTENT, verified.identityBasis)
+
+        assertFalse(inferred.isVerified, "A filename is not evidence about the bytes")
+        assertEquals(IdentityBasis.INFERRED, inferred.identityBasis)
+        assertNotNull(inferred.selected, "Inferred identity is still a usable result")
+    }
+
+    @Test
+    fun `every state reports an identity basis consistent with its selection rule`() {
+        ResolutionState.entries.forEach { state ->
+            if (state.canCarrySelection) {
+                assertTrue(
+                    state.identityBasis != IdentityBasis.NONE,
+                    "$state may carry an identity, so it must say what that identity rests on",
+                )
+            } else {
+                assertEquals(
+                    IdentityBasis.NONE,
+                    state.identityBasis,
+                    "$state carries no identity, so nothing may rest on it",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `an inferred identity is never renamed without confirmation`() {
+        val record = Fixtures.record(
+            setName = "Some PSP Game (USA)",
+            romName = "Some PSP Game (USA).iso",
+            size = 1_500_000_000L,
+            hashes = HashDigests.EMPTY,
+            source = redump,
+        )
+        val resolution = TestCatalogDriver(records = listOf(record))
+            .resolve(Fixtures.observation("Some PSP Game (USA).iso", size = 1_500_000_000L))
+
+        assertEquals(AutomationDecision.REQUIRES_REVIEW, AutomationPolicy().decide(resolution))
+    }
+
+    @Test
+    fun `an out of scope file is never renamed at all`() {
+        val driver = TestCatalogDriver(
+            records = listOf(Fixtures.record("Super Mario World (USA)", source = noIntroSnes)),
+        )
+        val resolution = driver.resolve(Fixtures.observation("Some PSP Game (USA).iso"))
+
+        assertEquals(AutomationDecision.FORBIDDEN, AutomationPolicy().decide(resolution))
     }
 }

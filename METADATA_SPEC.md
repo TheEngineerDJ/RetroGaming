@@ -210,3 +210,12 @@ Important changes should preserve:
 ## 18. Guiding rule
 
 **Store the thing, its names, its relationships, its evidence, and its history separately.**
+
+
+## Media type and dataset provenance
+
+Media type is first-class metadata on catalogued dumps and on observations, drawn from the versioned `media-v1` vocabulary. It is inferred from a filename and is therefore representation: it participates in ranking and explanation, never in exclusion.
+
+Dataset provenance is captured as `DatasetKind` (`dataset-kind-v1`), read from the DAT header and the provider namespace supplied at import. Provenance is recorded so results can be explained; it never determines what RetroVault searches.
+
+What a dataset covers is measured from its records, never inferred from its provenance. `DatasetKind.typicalMedia` exists to phrase an explanation and is explicitly not consulted when deciding scope.

@@ -1,5 +1,6 @@
 package com.retrovault.application
 
+import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.ScanSessionId
@@ -101,12 +102,18 @@ class ScanLocationUseCase(
         sessions.start(session)
         send(ScanEvent.SessionStarted(session))
 
+        // Read once for the whole scan. Coverage is a property of the imported
+        // datasets, identical for every file, and it is what lets an unmatched
+        // artifact be reported as uncatalogued rather than unidentifiable
+        // (Constitution section 174).
+        val coverage = catalog.coverage()
+
         val tally = Tally()
         val buffer = PersistBuffer(observations, config.persistBatchSize)
         var cancelled = true
 
         try {
-            runWorkers(root, sessionId, tally, buffer)
+            runWorkers(root, sessionId, tally, buffer, coverage)
             cancelled = false
         } finally {
             // The session must be closed out even when the collector walked
@@ -122,11 +129,13 @@ class ScanLocationUseCase(
         }
     }
 
+    @Suppress("LongParameterList")
     private suspend fun ProducerScope<ScanEvent>.runWorkers(
         root: StorageLocation,
         sessionId: ScanSessionId,
         tally: Tally,
         buffer: PersistBuffer,
+        coverage: CatalogueCoverage,
     ) {
         // Capacity gives the walker a little room to run ahead without letting
         // discovery outpace hashing without bound.
@@ -156,7 +165,7 @@ class ScanLocationUseCase(
         val workers = List(config.concurrency) {
             launch {
                 for (file in work) {
-                    process(file, sessionId, tally, buffer)
+                    process(file, sessionId, tally, buffer, coverage)
                 }
             }
         }
@@ -165,11 +174,13 @@ class ScanLocationUseCase(
         workers.joinAll()
     }
 
+    @Suppress("LongParameterList")
     private suspend fun ProducerScope<ScanEvent>.process(
         file: DiscoveredFile,
         sessionId: ScanSessionId,
         tally: Tally,
         buffer: PersistBuffer,
+        coverage: CatalogueCoverage,
     ) {
         val container = containerFor(file.name)
         val entries = if (container == ContainerKind.ZIP) {
@@ -199,7 +210,7 @@ class ScanLocationUseCase(
             observedAtEpochMillis = clock.nowEpochMillis(),
         )
 
-        val resolution = resolveArtifact.resolve(observation)
+        val resolution = resolveArtifact.resolve(observation, coverage)
         val resolved = ResolvedObservation(observation, resolution)
         tally.resolved(resolution)
         buffer.add(resolved)
@@ -281,6 +292,8 @@ private class Tally {
                 } else {
                     0
                 },
+            outOfCatalogueScope = summary.outOfCatalogueScope +
+                if (resolution.state == ResolutionState.OUT_OF_CATALOGUE_SCOPE) 1 else 0,
             hashesComputed = hashesComputed,
             hashingSkippedBySizeFilter = skipped,
         )

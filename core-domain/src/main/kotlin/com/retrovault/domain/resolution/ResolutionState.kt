@@ -8,6 +8,33 @@ import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.ObservationId
 
 /**
+ * What an identity claim actually rests on.
+ *
+ * The user-facing distinction the Constitution demands in section 6: a file
+ * whose bytes were checked against a catalogued digest is *verified*; a file
+ * named after a catalogued release is *inferred*. Both may be correct. Only one
+ * of them is evidence about the content, and RetroVault must never present them
+ * as the same kind of statement.
+ */
+enum class IdentityBasis {
+    /** A cryptographic hash of the content matched a catalogued digest. */
+    VERIFIED_CONTENT,
+
+    /** Size and CRC32 agree, but the catalogue offered nothing stronger. */
+    STRUCTURAL,
+
+    /** Identity read from the filename or metadata. The bytes were not verified. */
+    INFERRED,
+
+    /** No identity was established. */
+    NONE,
+    ;
+
+    /** True only for content-level verification. */
+    val isVerified: Boolean get() = this == VERIFIED_CONTENT
+}
+
+/**
  * How an artifact was resolved.
  *
  * ROM_INTELLIGENCE.md section 7 is explicit: exact and heuristic states must
@@ -35,8 +62,28 @@ enum class ResolutionState {
     /** Several candidates remain plausible. A valid, first-class outcome. */
     AMBIGUOUS,
 
-    /** Nothing in the catalogue plausibly matches. */
+    /**
+     * Nothing in the consulted datasets plausibly matches.
+     *
+     * This is a statement about the catalogue, not about the artifact
+     * (Constitution section 174). The datasets *do* cover this kind of file and
+     * still do not list it - which is real, if weak, evidence. It never means
+     * "unknown game": the file may be a perfectly ordinary release that the
+     * imported datasets happen not to describe.
+     */
     NO_MATCH,
+
+    /**
+     * No imported dataset covers this kind of file at all.
+     *
+     * Distinct from [NO_MATCH] on purpose. A library of PSP UMD images scanned
+     * against a cartridge-only dataset produces no matches, but the catalogue
+     * never had standing to say anything: reporting that as "not found" invites
+     * the user to conclude their files are unrecognisable, when the actual fact
+     * is that the right dataset has not been imported. The remedy is different,
+     * so the state is different.
+     */
+    OUT_OF_CATALOGUE_SCOPE,
 
     /** Strong evidence contradicts an otherwise promising candidate. */
     CONFLICT,
@@ -46,6 +93,23 @@ enum class ResolutionState {
     ;
 
     val isExact: Boolean get() = this == EXACT_HASH || this == EXACT_MULTI_HASH
+
+    /**
+     * What the identity, if any, actually rests on.
+     *
+     * ROM_INTELLIGENCE.md section 7 forbids exact and heuristic outcomes from
+     * collapsing into one boolean. This is the coarse form of that distinction:
+     * whether RetroVault *verified* the bytes or *inferred* the identity from
+     * what the file is called. Both are legitimate results; presenting them
+     * alike is not.
+     */
+    val identityBasis: IdentityBasis
+        get() = when (this) {
+            EXACT_HASH, EXACT_MULTI_HASH -> IdentityBasis.VERIFIED_CONTENT
+            STRUCTURAL_MATCH -> IdentityBasis.STRUCTURAL
+            STRONG_METADATA_MATCH, FUZZY_MATCH -> IdentityBasis.INFERRED
+            AMBIGUOUS, NO_MATCH, OUT_OF_CATALOGUE_SCOPE, CONFLICT, UNSUPPORTED -> IdentityBasis.NONE
+        }
 
     /** Whether this state is allowed to carry a selected identity. */
     val canCarrySelection: Boolean
@@ -78,7 +142,10 @@ enum class ConfidenceLevel {
             ResolutionState.STRUCTURAL_MATCH -> STRONG
             ResolutionState.STRONG_METADATA_MATCH, ResolutionState.FUZZY_MATCH -> PROBABLE
             ResolutionState.AMBIGUOUS, ResolutionState.CONFLICT -> AMBIGUOUS
-            ResolutionState.NO_MATCH, ResolutionState.UNSUPPORTED -> UNKNOWN
+            ResolutionState.NO_MATCH,
+            ResolutionState.OUT_OF_CATALOGUE_SCOPE,
+            ResolutionState.UNSUPPORTED,
+            -> UNKNOWN
         }
     }
 }
@@ -146,6 +213,12 @@ data class ArtifactResolution(
         get() = (selected?.evidence.orEmpty() + pipelineEvidence)
 
     val isResolved: Boolean get() = selected != null
+
+    /** What the selected identity, if any, rests on. */
+    val identityBasis: IdentityBasis get() = state.identityBasis
+
+    /** True only when the content itself was checked against a catalogued digest. */
+    val isVerified: Boolean get() = identityBasis.isVerified
 
     companion object {
         @Suppress("LongParameterList")

@@ -144,3 +144,48 @@ No release candidate if:
 ## 13. Guiding rule
 
 **Test the wrong answer harder than the right answer.**
+
+
+## Media, coverage and PSP disc scenarios
+
+The following must be covered, and are:
+
+**Media recognition**
+- `.iso`, `.cso`, `.pbp` recognised as optical disc; PSP UMD images specifically.
+- Disc images across generations (`.cue`, `.chd`, `.gdi`, `.rvz`, `.wbfs`, `.nrg`).
+- Cartridge extensions recognised as cartridge.
+- `.bin`, `.img`, `.rom` left `UNKNOWN` rather than guessed.
+- Unrecognised and absent extensions left `UNKNOWN`.
+- The SQL backfill table agrees with live classification.
+
+**Dataset provenance**
+- Redump, No-Intro, TOSEC and MAME inferred from what the DAT states.
+- An unrecognised dataset is `UNKNOWN`, never misattributed.
+
+**Coverage assessment**
+- Disc image against a cartridge-only catalogue is out of scope, naming both media.
+- Disc image against a disc catalogue is in scope.
+- One covering dataset among several is enough.
+- An empty catalogue reports "nothing imported", not "no match".
+- Unmeasured coverage makes no claim.
+- A file of unknown medium is never declared out of scope.
+- A dataset of unrecognised media covers everything.
+- Uncommitted and unmatchable records contribute no coverage.
+
+**PSP end-to-end**
+- PSP ISO against a Redump PSP DAT: exact, verified, renamed.
+- PSP ISO against a No-Intro cartridge DAT: out of catalogue scope, nothing renamed, the medium named, counted separately from `unmatched`.
+- Importing the disc dataset turns an out-of-scope library into a verified one.
+- A disc DAT that does not list a particular disc reports plain absence, not uncovered media.
+- A mixed library identifies each medium against the dataset that covers it.
+- No bytes are read for an out-of-scope artifact.
+
+**Verified against inferred**
+- A hash match is `VERIFIED_CONTENT`; a filename match is `INFERRED`.
+- Every state that may carry an identity reports a basis other than `NONE`, and every state that may not reports `NONE`.
+- Inferred identity never renames without confirmation; out-of-scope never renames at all.
+
+**Media as evidence, not exclusion**
+- A cartridge record never outranks a disc record for a disc image, and carries a visible reason for losing.
+- A medium disagreement weakens without excluding.
+- A disc preserved in another form (`.chd` against a catalogued `.cue`) registers no disagreement at all.

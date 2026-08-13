@@ -4,6 +4,8 @@ import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.HashDigests
 import com.retrovault.domain.identity.HashValue
+import com.retrovault.domain.identity.MediaType
+import com.retrovault.domain.identity.MediaTypeVocabulary
 import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
@@ -135,4 +137,19 @@ data class FileObservation(
     }
 
     fun hasHash(algorithm: HashAlgorithm): Boolean = identityBearingHashes().contains(algorithm)
+
+    /**
+     * The medium the identity-bearing bytes appear to have come from.
+     *
+     * Derived, not stored: it can be recomputed from the observation at any
+     * time, so it never becomes a second source of truth about the file
+     * (Constitution section 72). It is read from the *identity-bearing* name so
+     * that `psp-game.zip` containing `Some Game.iso` is understood as a disc
+     * image rather than as an archive of unknown medium.
+     *
+     * This is a reading of a filename and is therefore never identity. It is
+     * used only to widen or explain - to say which datasets could plausibly
+     * describe this file - and never to reject a candidate outright.
+     */
+    val mediaType: MediaType get() = MediaTypeVocabulary.forFilename(identityBearingName())
 }

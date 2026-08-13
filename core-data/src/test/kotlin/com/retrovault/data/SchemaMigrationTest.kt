@@ -142,4 +142,84 @@ class SchemaMigrationTest {
         assertEquals(3, countOf("dump_hash"))
         assertTrue(countOf("dump_record") == 3)
     }
+
+    // ------------------------------------------------------------------
+    // Version 3: media type and dataset provenance
+    // ------------------------------------------------------------------
+
+    private fun seedVersion2WithMedia() {
+        Schema.migrateTo(database, 2)
+        database.execute(
+            "INSERT INTO dat_source (id, provider, set_name, version, platform, imported_at, " +
+                "source_digest, state) VALUES ('src', 'redump', 'PSP', '1', 'PSP', 1, NULL, 'ready')",
+        )
+        listOf(
+            "disc" to "Some Game (USA).iso",
+            "cart" to "Some Game (USA).sfc",
+            "track" to "Some Game (USA) (Track 1).bin",
+        ).forEach { (id, romName) ->
+            database.execute(
+                "INSERT INTO dump_record (id, source_id, set_name, rom_name, size, platform, " +
+                    "canonical_title, normalized_title, status, regions, languages, flags) " +
+                    "VALUES (?, 'src', 'Some Game (USA)', ?, 100, 'PSP', 'Some Game', 'some game', " +
+                    "'GOOD', '', '', '')",
+                listOf(id, romName),
+            )
+        }
+    }
+
+    private fun mediaOf(id: String): String = database
+        .query("SELECT media_type FROM dump_record WHERE id = ?", listOf(id)) { it.getString(0) }
+        .single()
+
+    @Test
+    fun `upgrading backfills media type from the rom names already stored`() {
+        // An existing catalogue must gain coverage without a re-import.
+        // Otherwise every user who upgrades is told their whole library is
+        // out of scope until they re-import every DAT.
+        seedVersion2WithMedia()
+
+        Schema.migrate(database)
+
+        assertEquals("OPTICAL_DISC", mediaOf("disc"))
+        assertEquals("CARTRIDGE", mediaOf("cart"))
+    }
+
+    @Test
+    fun `the backfill leaves an ambiguous extension unknown`() {
+        // `.bin` is both a cartridge dump and a CD track. UNKNOWN reads as
+        // "covers everything", so guessing here would be the only way this
+        // could narrow a search wrongly.
+        seedVersion2WithMedia()
+
+        Schema.migrate(database)
+
+        assertEquals("UNKNOWN", mediaOf("track"))
+    }
+
+    @Test
+    fun `datasets imported before provenance existed default to unknown`() {
+        seedVersion2WithMedia()
+
+        Schema.migrate(database)
+
+        val kind = database
+            .query("SELECT kind FROM dat_source WHERE id = 'src'") { it.getString(0) }
+            .single()
+        assertEquals(
+            "UNKNOWN",
+            kind,
+            "Provenance is read from the DAT, so a row written before it existed cannot claim one",
+        )
+    }
+
+    @Test
+    fun `upgrading to version 3 preserves every record`() {
+        seedVersion2WithMedia()
+
+        Schema.migrate(database)
+
+        assertEquals(3, countOf("dump_record"))
+        assertEquals(Schema.CURRENT_VERSION, Schema.versionOf(database))
+    }
 }

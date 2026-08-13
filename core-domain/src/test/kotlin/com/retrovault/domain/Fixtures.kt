@@ -1,13 +1,19 @@
 package com.retrovault.domain
 
+import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.catalog.DatSourceRef
+import com.retrovault.domain.catalog.DatasetCoverage
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.DatSourceId
 import com.retrovault.domain.identity.DumpRecordId
 import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.HashDigests
+import com.retrovault.domain.identity.DatasetKind
+import com.retrovault.domain.identity.DatasetKindVocabulary
 import com.retrovault.domain.identity.HashValue
+import com.retrovault.domain.identity.MediaType
+import com.retrovault.domain.identity.MediaTypeVocabulary
 import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.PlatformName
 import com.retrovault.domain.identity.ScanSessionId
@@ -33,10 +39,13 @@ object Fixtures {
 
     val snes = PlatformName("Nintendo - Super Nintendo Entertainment System")
 
+    val psp = PlatformName("Sony - PlayStation Portable")
+
     fun source(
         provider: String = "no_intro",
         version: String = "2026-01-01",
         platform: PlatformName = snes,
+        kind: DatasetKind = DatasetKindVocabulary.infer(provider, platform.value, null, null),
     ): DatSourceRef = DatSourceRef(
         id = DatSourceId("$provider:${platform.value}:$version"),
         provider = provider,
@@ -44,6 +53,7 @@ object Fixtures {
         version = version,
         platform = platform,
         importedAtEpochMillis = 1_700_000_000_000L,
+        kind = kind,
     )
 
     fun crc(value: String): HashValue = HashValue.of(HashAlgorithm.CRC32, value)
@@ -60,6 +70,7 @@ object Fixtures {
         hashes: HashDigests = HashDigests.EMPTY,
         source: DatSourceRef = source(),
         id: String = "${source.provider}:$setName:$romName",
+        mediaType: MediaType = MediaTypeVocabulary.forFilename(romName),
     ): DumpRecord = DumpRecord.derive(
         id = DumpRecordId(id),
         source = source,
@@ -67,6 +78,7 @@ object Fixtures {
         romName = romName,
         size = size,
         hashes = hashes,
+        mediaType = mediaType,
     )
 
     @Suppress("LongParameterList")
@@ -115,12 +127,20 @@ class TestCatalogDriver(
     private val unreadable: Set<HashAlgorithm> = emptySet(),
     private val catalogUnavailableFor: Set<Class<out EvidenceRequest>> = emptySet(),
     private val resolver: ArtifactResolver = ArtifactResolver(),
+    /**
+     * What the datasets are known to cover.
+     *
+     * Defaults to coverage measured from [records], which is what the real
+     * catalogue does. Pass [CatalogueCoverage.UNMEASURED] to exercise a caller
+     * that did not look.
+     */
+    private val coverage: CatalogueCoverage = TestCoverage.measuredFrom(records),
 ) {
     /** Every request the resolver made, in order. Lets tests assert on escalation. */
     val requests: MutableList<EvidenceRequest> = mutableListOf()
 
     fun resolve(observation: com.retrovault.domain.observation.FileObservation): ArtifactResolution {
-        var stage = resolver.begin(observation)
+        var stage = resolver.begin(observation, coverage)
         var guard = 0
         while (stage is ResolutionStage.AwaitingEvidence) {
             check(guard++ < MAX_STEPS) { "Resolver did not terminate; requests=$requests" }
@@ -177,4 +197,25 @@ class TestCatalogDriver(
     private companion object {
         const val MAX_STEPS = 12
     }
+}
+
+/**
+ * Coverage measured the way the real catalogue measures it: from the media the
+ * indexed records actually carry, never from the dataset's name.
+ */
+object TestCoverage {
+    fun measuredFrom(records: List<DumpRecord>): CatalogueCoverage =
+        if (records.isEmpty()) {
+            CatalogueCoverage(emptyList())
+        } else {
+            CatalogueCoverage(
+                records.groupBy { it.source.id }.map { (_, grouped) ->
+                    DatasetCoverage(
+                        source = grouped.first().source,
+                        mediaTypes = grouped.mapTo(mutableSetOf()) { it.mediaType },
+                        recordCount = grouped.size,
+                    )
+                },
+            )
+        }
 }

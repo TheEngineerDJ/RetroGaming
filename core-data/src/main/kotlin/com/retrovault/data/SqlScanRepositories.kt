@@ -60,8 +60,8 @@ class SqlScanSessionRepository(
     ): Outcome<Unit> = write {
         database.execute(
             "UPDATE scan_session SET finished_at = ?, cancelled = ?, discovered = ?, processed = ?, " +
-                "exact = ?, strong = ?, review_required = ?, ambiguous = ?, unmatched = ?, failed = ?, " +
-                "hashes_computed = ?, hashing_skipped = ? WHERE id = ?",
+                "exact = ?, strong = ?, review_required = ?, ambiguous = ?, unmatched = ?, " +
+                "out_of_scope = ?, failed = ?, hashes_computed = ?, hashing_skipped = ? WHERE id = ?",
             listOf(
                 System.currentTimeMillis(),
                 if (cancelled) 1L else 0L,
@@ -72,6 +72,7 @@ class SqlScanSessionRepository(
                 summary.reviewRequired.toLong(),
                 summary.ambiguous.toLong(),
                 summary.unmatched.toLong(),
+                summary.outOfCatalogueScope.toLong(),
                 summary.failed.toLong(),
                 summary.hashesComputed.toLong(),
                 summary.hashingSkippedBySizeFilter.toLong(),
@@ -84,8 +85,8 @@ class SqlScanSessionRepository(
         val record = database.queryOne(
             "SELECT id, root_ref, root_display_name, started_at, finished_at, dat_source_ids, " +
                 "naming_profile, resolver_version, cancelled, discovered, processed, exact, strong, " +
-                "review_required, ambiguous, unmatched, failed, hashes_computed, hashing_skipped " +
-                "FROM scan_session WHERE id = ?",
+                "review_required, ambiguous, unmatched, out_of_scope, failed, hashes_computed, " +
+                "hashing_skipped FROM scan_session WHERE id = ?",
             listOf(id.value),
         ) { row ->
             ScanSessionRecord(
@@ -109,9 +110,10 @@ class SqlScanSessionRepository(
                     reviewRequired = row.getInt(13),
                     ambiguous = row.getInt(14),
                     unmatched = row.getInt(15),
-                    failed = row.getInt(16),
-                    hashesComputed = row.getInt(17),
-                    hashingSkippedBySizeFilter = row.getInt(18),
+                    outOfCatalogueScope = row.getInt(16),
+                    failed = row.getInt(17),
+                    hashesComputed = row.getInt(18),
+                    hashingSkippedBySizeFilter = row.getInt(19),
                 ),
             )
         }

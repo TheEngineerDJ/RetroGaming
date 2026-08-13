@@ -4,11 +4,15 @@ import com.retrovault.application.DatCatalogWriter
 import com.retrovault.application.DumpCatalog
 import com.retrovault.application.Outcome
 import com.retrovault.application.RetroVaultFailure
+import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.catalog.DatSourceRef
+import com.retrovault.domain.catalog.DatasetCoverage
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.identity.DatSourceId
+import com.retrovault.domain.identity.DatasetKind
 import com.retrovault.domain.identity.HashDigests
 import com.retrovault.domain.identity.HashValue
+import com.retrovault.domain.identity.MediaType
 import com.retrovault.domain.identity.PlatformName
 import com.retrovault.domain.naming.NormalizedTitle
 import kotlinx.coroutines.CoroutineDispatcher
@@ -73,10 +77,50 @@ class SqlDumpCatalog(
 
     override suspend fun sources(): List<DatSourceRef> = read {
         database.query(
-            "SELECT id, provider, set_name, version, platform, imported_at, source_digest " +
+            "SELECT id, provider, set_name, version, platform, imported_at, source_digest, kind " +
                 "FROM dat_source WHERE state = ? ORDER BY id",
             listOf(STATE_READY),
         ) { row -> row.toSource() }
+    }
+
+    /**
+     * Measured from the records each ready dataset actually indexes.
+     *
+     * Only matchable records count. A dataset whose optical-disc entries are
+     * all `nodump` placeholders does not really cover optical discs, and
+     * treating it as if it did would let RetroVault claim a PSP library was
+     * searched when nothing searchable was there.
+     */
+    override suspend fun coverage(): CatalogueCoverage = read {
+        val sources = database.query(
+            "SELECT id, provider, set_name, version, platform, imported_at, source_digest, kind " +
+                "FROM dat_source WHERE state = ? ORDER BY id",
+            listOf(STATE_READY),
+        ) { row -> row.toSource() }
+        if (sources.isEmpty()) return@read CatalogueCoverage(emptyList())
+
+        val counts = database.query(
+            "SELECT r.source_id, r.media_type, COUNT(*) FROM dump_record r " +
+                "JOIN dat_source s ON s.id = r.source_id " +
+                "WHERE s.state = ? AND r.matchable = 1 " +
+                "GROUP BY r.source_id, r.media_type",
+            listOf(STATE_READY),
+        ) { row -> Triple(row.getString(0), row.getString(1), row.getInt(2)) }
+
+        val bySource = counts.groupBy { it.first }
+        CatalogueCoverage(
+            sources.map { source ->
+                val rows = bySource[source.id.value].orEmpty()
+                DatasetCoverage(
+                    source = source,
+                    mediaTypes = rows
+                        .mapNotNullTo(mutableSetOf()) { (_, media, _) ->
+                            runCatching { MediaType.valueOf(media) }.getOrNull()
+                        },
+                    recordCount = rows.sumOf { it.third },
+                )
+            },
+        )
     }
 
     // --------------------------------------------------------------- writes
@@ -88,8 +132,8 @@ class SqlDumpCatalog(
             database.execute("DELETE FROM dat_source WHERE id = ?", listOf(source.id.value))
             database.execute(
                 "INSERT INTO dat_source " +
-                    "(id, provider, set_name, version, platform, imported_at, source_digest, state) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "(id, provider, set_name, version, platform, imported_at, source_digest, " +
+                    "state, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 listOf(
                     source.id.value,
                     source.provider,
@@ -99,6 +143,7 @@ class SqlDumpCatalog(
                     source.importedAtEpochMillis,
                     source.sourceDigest,
                     STATE_IMPORTING,
+                    source.kind.name,
                 ),
             )
         }
@@ -129,8 +174,8 @@ class SqlDumpCatalog(
         database.execute(
             "INSERT OR REPLACE INTO dump_record (id, source_id, set_name, rom_name, size, platform, " +
                 "canonical_title, normalized_title, revision, version, disc_number, status, external_id, " +
-                "regions, languages, flags, matchable) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "regions, languages, flags, matchable, media_type) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             listOf(
                 record.id.value,
                 sourceId.value,
@@ -149,6 +194,7 @@ class SqlDumpCatalog(
                 RecordMapper.encodeList(record.languages.map { it.code }),
                 RecordMapper.encodeList(record.flags.map { it.name }.sorted()),
                 if (record.isMatchable) 1L else 0L,
+                record.mediaType.name,
             ),
         )
         record.hashes.asList().forEach { hash ->
@@ -178,7 +224,8 @@ class SqlDumpCatalog(
             "SELECT r.id, r.set_name, r.rom_name, r.size, r.platform, r.canonical_title, " +
                 "r.normalized_title, r.revision, r.version, r.disc_number, r.status, r.external_id, " +
                 "r.regions, r.languages, r.flags, " +
-                "s.id, s.provider, s.set_name, s.version, s.platform, s.imported_at, s.source_digest " +
+                "s.id, s.provider, s.set_name, s.version, s.platform, s.imported_at, s.source_digest, " +
+                "r.media_type, s.kind " +
                 "FROM dump_record r JOIN dat_source s ON s.id = r.source_id " +
                 // `matchable = 0` marks nodump/baddump entries. They stay in
                 // the table as knowledge but never reach the resolver, because
@@ -201,6 +248,7 @@ class SqlDumpCatalog(
         platform = PlatformName(getString(4)),
         importedAtEpochMillis = getLong(5),
         sourceDigest = getStringOrNull(6),
+        kind = runCatching { DatasetKind.valueOf(getString(7)) }.getOrDefault(DatasetKind.UNKNOWN),
     )
 
     private suspend fun <T> read(body: () -> T): T = withContext(dispatcher) { body() }

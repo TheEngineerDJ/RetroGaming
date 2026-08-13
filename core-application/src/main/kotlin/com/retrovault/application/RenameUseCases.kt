@@ -111,6 +111,16 @@ data class RenamePreviewRow(
     val action: PlannedAction,
     val matchType: String,
     val confidence: String,
+    /**
+     * Whether the identity was checked against the bytes or read from the name.
+     *
+     * Carried separately from [confidence] because they answer different
+     * questions: confidence is how sure RetroVault is, basis is what that
+     * certainty rests on. A user deciding whether to accept a rename needs
+     * both (Constitution section 6).
+     */
+    val identityBasis: String,
+    val verified: Boolean,
     val identity: String?,
     val reasons: List<String>,
     val warnings: List<String>,
@@ -141,6 +151,8 @@ class PreviewRenamePlanUseCase(private val validate: ValidateRenamePlanUseCase) 
                 action = entry.action,
                 matchType = entry.resolution.state.name,
                 confidence = entry.resolution.confidence.name,
+                identityBasis = entry.resolution.identityBasis.name,
+                verified = entry.resolution.isVerified,
                 identity = entry.resolution.selected?.record?.canonicalIdentityKey?.describe(),
                 reasons = entry.resolution.explanation.map { it.description },
                 warnings = entry.issues.map { it.message },
