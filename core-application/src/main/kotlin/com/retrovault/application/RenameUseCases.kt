@@ -99,6 +99,7 @@ class ValidateRenamePlanUseCase(
                 filename = null,
                 size = null,
                 writable = false,
+                readable = false,
             )
         }
 }
@@ -367,8 +368,10 @@ class ReconcileInterruptedRenamesUseCase(
     }
 
     private suspend fun gatherEvidence(operation: RenameOperation): ReconciliationEvidence {
-        val names = (contentSource.listNames(operation.directoryRef) as? Outcome.Success)?.value
-        val source = (contentSource.stat(operation.sourceRef) as? Outcome.Success)?.value
+        val listing = contentSource.listNames(operation.directoryRef)
+        val stat = contentSource.stat(operation.sourceRef)
+        val names = (listing as? Outcome.Success)?.value
+        val source = (stat as? Outcome.Success)?.value
         val sourceExists = source?.exists == true && source.filename == operation.sourceName
         val destinationExists = names?.containsIgnoringCase(operation.destinationName) == true
         return ReconciliationEvidence(
@@ -382,6 +385,10 @@ class ReconcileInterruptedRenamesUseCase(
             destinationSize = if (destinationExists && !sourceExists) operation.preconditionSize else null,
             intermediateExists = operation.intermediateName
                 ?.let { names?.containsIgnoringCase(it) } == true,
+            // A provider that refuses to answer produces the same nulls as an
+            // empty folder. Recording which one happened is what stops a
+            // permission failure being read as proof that a file is gone.
+            storageReadable = listing is Outcome.Success && stat is Outcome.Success,
         )
     }
 }

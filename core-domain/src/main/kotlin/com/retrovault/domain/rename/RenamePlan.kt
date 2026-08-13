@@ -1,5 +1,6 @@
 package com.retrovault.domain.rename
 
+import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.PlanEntryId
 import com.retrovault.domain.identity.RenamePlanId
 import com.retrovault.domain.identity.ScanSessionId
@@ -248,7 +249,7 @@ object RenamePlanBuilder {
         profile: NamingProfile,
         policy: AutomationPolicy,
         resolved: List<Pair<FileObservation, ArtifactResolution>>,
-        confirmations: Set<com.retrovault.domain.identity.ObservationId> = emptySet(),
+        confirmations: Set<ObservationId> = emptySet(),
         createdAtEpochMillis: Long,
         entryIdFactory: (FileObservation) -> PlanEntryId,
     ): RenamePlan {
@@ -264,7 +265,7 @@ object RenamePlanBuilder {
         resolution: ArtifactResolution,
         profile: NamingProfile,
         policy: AutomationPolicy,
-        confirmations: Set<com.retrovault.domain.identity.ObservationId>,
+        confirmations: Set<ObservationId>,
     ): RenamePlanEntry {
         val automation = policy.decide(resolution)
         val confirmed = observation.id in confirmations

@@ -28,6 +28,8 @@ import kotlinx.coroutines.test.runTest
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -149,6 +151,24 @@ class ScanLocationUseCaseTest {
             Outcome.success(DirectorySnapshot(directory, emptySet()))
     }
 
+    /** Fails the Nth save and every one after it, to model a database going away. */
+    private class FailingObservations(private val failFromBatch: Int) : ObservationRepository {
+        var batches = 0
+            private set
+
+        override suspend fun saveAll(entries: List<ResolvedObservation>): Outcome<Int> {
+            val index = synchronized(this) { batches++ }
+            return if (index >= failFromBatch) {
+                Outcome.failure(RetroVaultFailure.PersistenceFailure("disk full"))
+            } else {
+                Outcome.success(entries.size)
+            }
+        }
+
+        override suspend fun findBySession(id: ScanSessionId): Outcome<List<ResolvedObservation>> =
+            Outcome.success(emptyList())
+    }
+
     private class RecordingObservations : ObservationRepository {
         val saved = mutableListOf<ResolvedObservation>()
         val batchSizes = mutableListOf<Int>()
@@ -211,6 +231,46 @@ class ScanLocationUseCaseTest {
             "Unmeasured coverage must fall back to plain absence, not to a scope claim",
         )
         assertTrue(events.any { it is ScanEvent.SessionFinished })
+    }
+
+
+    @Test
+    fun `a persistence failure part-way through a scan is reported, not swallowed`() = runTest {
+        // Only the final flush used to be checked. A database that started
+        // failing at batch two produced a scan reporting success and a rename
+        // plan missing most of its files, with nothing anywhere saying why.
+        val walker = FakeWalker((1..12).map { WalkEvent.FileFound(file("game$it.sfc")) })
+
+        val events = useCase(
+            walker,
+            CountingContentSource(),
+            FakeCatalog(emptyList()),
+            FailingObservations(failFromBatch = 0),
+            RecordingSessions(),
+            config = ScanConfig(concurrency = 1, persistBatchSize = 4),
+        ).scan(location).toList()
+
+        val finished = events.filterIsInstance<ScanEvent.SessionFinished>().single()
+        assertNotNull(
+            finished.persistenceFailure,
+            "A scan that could not persist its results must say so",
+        )
+    }
+
+    @Test
+    fun `a scan that persists everything reports no failure`() = runTest {
+        val walker = FakeWalker((1..12).map { WalkEvent.FileFound(file("game$it.sfc")) })
+
+        val events = useCase(
+            walker,
+            CountingContentSource(),
+            FakeCatalog(emptyList()),
+            RecordingObservations(),
+            RecordingSessions(),
+            config = ScanConfig(concurrency = 1, persistBatchSize = 4),
+        ).scan(location).toList()
+
+        assertNull(events.filterIsInstance<ScanEvent.SessionFinished>().single().persistenceFailure)
     }
 
     private fun useCase(

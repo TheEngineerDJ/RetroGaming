@@ -4,6 +4,7 @@ import com.retrovault.domain.identity.PlanEntryId
 import com.retrovault.domain.identity.StorageRef
 import com.retrovault.domain.naming.FilenameSanitizer
 import com.retrovault.domain.naming.FilenameValidation
+import com.retrovault.domain.naming.InvalidNameReason
 import com.retrovault.domain.policy.AutomationDecision
 
 /**
@@ -29,6 +30,15 @@ data class ArtifactState(
     val filename: String?,
     val size: Long?,
     val writable: Boolean,
+    /**
+     * Whether storage answered at all.
+     *
+     * `false` means [exists] and the rest are defaults, not observations. Both
+     * outcomes block the batch, so this changes no decision - it changes what
+     * the user is told, and "the file no longer exists" is not a true thing to
+     * say about a file whose folder refused to answer (UX_SPEC.md section 13).
+     */
+    val readable: Boolean = true,
 )
 
 enum class PlanVerdict {
@@ -154,7 +164,7 @@ class RenamePlanValidator {
             issues.add(
                 PlanIssue.InvalidDestinationName(
                     entry.id,
-                    com.retrovault.domain.naming.InvalidNameReason.EMPTY,
+                    InvalidNameReason.EMPTY,
                     "No canonical name was produced for this file.",
                 ),
             )
@@ -170,6 +180,14 @@ class RenamePlanValidator {
 
         val state = states[entry.storageRef]
         when {
+            state != null && !state.readable ->
+                issues.add(
+                    PlanIssue.UnsupportedOperation(
+                        entry.id,
+                        "its current state could not be read, so the rename cannot be verified as safe",
+                    ),
+                )
+
             state == null || !state.exists ->
                 issues.add(PlanIssue.StaleObservation(entry.id, "the file no longer exists"))
 

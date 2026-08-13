@@ -247,4 +247,82 @@ class RenameReconcilerTest {
 
         assertEquals(RenameOperationState.RECONCILED_COMPLETED, result.state)
     }
+
+    // ------------------------------------------------------------------
+    // Unreadable storage is not an observed absence
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `storage that could not be read yields unknown, not a verdict`() {
+        // The provider refused, so every "does not exist" below is a default
+        // rather than an observation. Reading a refusal as proof would let a
+        // lapsed permission be recorded as "the rename never happened".
+        val result = RenameReconciler.reconcile(
+            operation(),
+            ReconciliationEvidence(
+                sourceExists = false,
+                sourceSize = null,
+                destinationExists = false,
+                destinationSize = null,
+                storageReadable = false,
+            ),
+            now,
+        )
+
+        assertEquals(RenameOperationState.RECONCILED_UNKNOWN, result.state)
+        assertTrue(
+            result.failure?.message?.contains("could not be read") == true,
+            "The reason must name the read failure: ${result.failure?.message}",
+        )
+    }
+
+    @Test
+    fun `an unreadable directory cannot make a still-present source look unapplied`() {
+        // Source readable and unchanged, directory unreadable. Without the
+        // distinction this reported RECONCILED_NOT_APPLIED - a confident claim
+        // resting on a folder nobody managed to look at.
+        val result = RenameReconciler.reconcile(
+            operation(),
+            ReconciliationEvidence(
+                sourceExists = true,
+                sourceSize = size,
+                destinationExists = false,
+                destinationSize = null,
+                storageReadable = false,
+            ),
+            now,
+        )
+
+        assertEquals(RenameOperationState.RECONCILED_UNKNOWN, result.state)
+    }
+
+    @Test
+    fun `readable storage still reaches a verdict`() {
+        val result = RenameReconciler.reconcile(
+            operation(),
+            ReconciliationEvidence(
+                sourceExists = true,
+                sourceSize = size,
+                destinationExists = false,
+                destinationSize = null,
+                storageReadable = true,
+            ),
+            now,
+        )
+
+        assertEquals(RenameOperationState.RECONCILED_NOT_APPLIED, result.state)
+    }
+
+    @Test
+    fun `an already terminal operation is untouched even when storage is unreadable`() {
+        val done = operation(RenameOperationState.COMPLETED)
+
+        val result = RenameReconciler.reconcile(
+            done,
+            ReconciliationEvidence(false, null, false, null, storageReadable = false),
+            now,
+        )
+
+        assertEquals(done, result)
+    }
 }

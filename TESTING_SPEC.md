@@ -204,3 +204,19 @@ The source cites constitutional sections by number, so those citations are check
 - No two sections share a label. A letter suffix is part of the label, so `166` and `166A` are distinct.
 - Part I keeps the body numbering (0-288) and Part II is offset (301-341), with 289-299 left empty as the gap between them.
 - No source file contains a control character. A stray NUL makes a file read as binary to grep, diff and review tooling.
+
+## Audit findings kept as regression tests
+
+**Honest absence.** A read failure and an observed absence must not produce the same verdict:
+
+- Reconciliation of an interrupted rename returns `RECONCILED_UNKNOWN` when storage could not be read, and still reaches a verdict when it could.
+- An already-terminal operation is untouched even when storage is unreadable.
+- A file whose state could not be read is reported as unreadable, not as missing; a genuinely absent file is still reported as stale.
+
+**No unearned certainty.** An exact state is only claimed when an algorithm actually verified it, even if the catalogue port misbehaves and answers a hash lookup with a record carrying no such hash. The result degrades to a structural match.
+
+**No silent persistence loss.** A scan whose intermediate batch writes fail reports the failure; a scan that persists everything reports none.
+
+**Guards that guard.** A forbidden dependency written as a fully qualified name in the body, rather than as an import, is caught in both the domain and application boundary tests. Forbidden package prefixes are dot-terminated so `com.retrovault.app` cannot flag `com.retrovault.application`.
+
+**Citations resolve.** Every `<SPEC>.md section N` cited anywhere in the source points at a section that exists, in every derived specification, not only the constitution.

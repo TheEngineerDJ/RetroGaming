@@ -524,6 +524,16 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
             )
         }
 
+        // An exact state is a claim that the *content* was verified, so it is
+        // only ever made when this function can point at the algorithm that
+        // verified it. Reaching here with nothing verified would mean the
+        // catalogue answered a hash lookup with a record carrying no such hash;
+        // the resolver does not assume the port is well behaved when the
+        // consequence is a wrong match presented as certain
+        // (TESTING_SPEC.md section 1). CRC32 and size still agree, which is
+        // exactly what a structural match is.
+        if (verifiedAlgorithms.isEmpty()) return finalizeStructural(session)
+
         val records = groups.values.first()
         val candidate = buildExactCandidate(session, records, verifiedAlgorithms)
         val state = if (verifiedAlgorithms.size >= 2) {
@@ -1106,7 +1116,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
          * Constitution section 227: any algorithm that materially affects
          * canonical output carries a version, and results record it.
          */
-        const val VERSION: String = "artifact-resolver-v2"
+        const val VERSION: String = "artifact-resolver-v3"
 
         /**
          * Score cost of an identity token the catalogue record does not state.

@@ -86,4 +86,33 @@ class ArchitectureBoundaryTest {
 
         assertTrue(violations.isEmpty(), violations.joinToString("\n"))
     }
+
+    @Test
+    fun `a forbidden dependency cannot hide behind a fully qualified name`() {
+        // The check above reads import lines. Writing the same dependency as a
+        // fully qualified name in the body would satisfy the compiler and slip
+        // past it, so the body is checked too. Comments are excluded: a rule is
+        // allowed to explain what it forbids.
+        val path = System.getProperty("retrovault.moduleSourceDir")
+            ?: fail("retrovault.moduleSourceDir is not set; the build must provide it")
+        val violations = mutableListOf<String>()
+
+        File(path).walkTopDown().filter { it.extension == "kt" }.forEach { file ->
+            file.readLines().forEachIndexed { index, line ->
+                val code = line.substringBefore("//").trim()
+                if (code.startsWith("import ") || code.startsWith("package ") ||
+                    code.startsWith("*") || code.startsWith("/*")
+                ) {
+                    return@forEachIndexed
+                }
+                forbiddenPrefixes.forEach { (prefix, description) ->
+                    if (code.contains(prefix)) {
+                        violations += "${file.name}:${index + 1} names $prefix inline ($description)"
+                    }
+                }
+            }
+        }
+
+        assertTrue(violations.isEmpty(), violations.joinToString("\n"))
+    }
 }

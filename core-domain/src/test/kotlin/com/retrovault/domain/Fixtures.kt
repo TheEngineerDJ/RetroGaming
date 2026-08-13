@@ -135,6 +135,13 @@ class TestCatalogDriver(
      * that did not look.
      */
     private val coverage: CatalogueCoverage = TestCoverage.measuredFrom(records),
+    /**
+     * Overrides the hash-lookup answer, to model a catalogue that breaks its
+     * own contract. The resolver's safety rules must not rest on the port
+     * behaving, because the consequence of a bad answer is a wrong match
+     * presented as certain.
+     */
+    private val answerEveryHashLookupWith: List<DumpRecord>? = null,
 ) {
     /** Every request the resolver made, in order. Lets tests assert on escalation. */
     val requests: MutableList<EvidenceRequest> = mutableListOf()
@@ -166,7 +173,8 @@ class TestCatalogDriver(
 
             is EvidenceRequest.CatalogLookupByHash ->
                 EvidenceResponse.CatalogRecords(
-                    records.filter { it.hashes[request.hash.algorithm] == request.hash },
+                    answerEveryHashLookupWith
+                        ?: records.filter { it.hashes[request.hash.algorithm] == request.hash },
                 )
 
             is EvidenceRequest.CatalogLookupByTitle -> {

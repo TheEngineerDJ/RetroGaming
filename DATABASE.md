@@ -351,3 +351,7 @@ Existing rows are backfilled from the rom-name extensions already stored, so an 
 ### Migration hazard, recorded
 
 Rebuilding a parent table under enforced foreign keys is destructive: `DROP TABLE dump_record` performs an implicit delete that fires `ON DELETE CASCADE` and empties `dump_hash` and `dump_title_token`. Version 2 rebuilds `dump_record`, so it copies the dependent tables onto the new parent *before* dropping the old one. Any future migration that rebuilds a parent table must do the same and must be covered by a test that seeds the previous version and asserts the children survive.
+
+## Reading failures are not absences
+
+`ArtifactState.readable` and `ReconciliationEvidence.storageReadable` record whether storage answered at all. Both default to true and neither changes a safety decision - an unreadable file blocks its batch either way. They exist because the verdicts built on them read an absence as evidence, and an absence that was never observed is not evidence. Without them, a lapsed permission was recorded as "the file no longer exists" and, during reconciliation, as "the rename never happened".

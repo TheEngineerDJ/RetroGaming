@@ -445,4 +445,50 @@ class RenamePlanValidatorTest {
         val cycles = validation.issues.filterIsInstance<PlanIssue.RenameCycle>().distinct()
         assertEquals(2, cycles.size, "Two folders' swaps are two problems: ${cycles.map { it.names }}")
     }
+
+    @Test
+    fun `a file whose state could not be read is not reported as missing`() {
+        // Both outcomes block the batch, so this changes no decision. It changes
+        // what the user is told, and "the file no longer exists" is not true of
+        // a file storage refused to describe.
+        val entry = entry("a.sfc", "Some Game (USA).sfc")
+        val unreadable = mapOf(
+            entry.storageRef to ArtifactState(
+                storageRef = entry.storageRef,
+                exists = false,
+                filename = null,
+                size = null,
+                writable = false,
+                readable = false,
+            ),
+        )
+
+        val validation = validator.validate(plan(entry), snapshot("a.sfc"), unreadable, now)
+
+        assertEquals(PlanVerdict.BLOCKED, validation.verdict)
+        val issue = validation.blockingIssues.single()
+        assertTrue(issue is PlanIssue.UnsupportedOperation, "Got ${issue::class.simpleName}")
+        assertTrue(
+            issue.message.contains("could not be read"),
+            "The message must describe the read failure: ${issue.message}",
+        )
+    }
+
+    @Test
+    fun `a genuinely absent file is still reported as stale`() {
+        val entry = entry("a.sfc", "Some Game (USA).sfc")
+        val absent = mapOf(
+            entry.storageRef to ArtifactState(
+                storageRef = entry.storageRef,
+                exists = false,
+                filename = null,
+                size = null,
+                writable = false,
+            ),
+        )
+
+        val validation = validator.validate(plan(entry), snapshot("a.sfc"), absent, now)
+
+        assertTrue(validation.blockingIssues.single() is PlanIssue.StaleObservation)
+    }
 }

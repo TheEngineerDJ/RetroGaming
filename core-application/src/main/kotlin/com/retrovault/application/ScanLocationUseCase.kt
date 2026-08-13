@@ -1,10 +1,12 @@
 package com.retrovault.application
 
 import com.retrovault.domain.catalog.CatalogueCoverage
+import com.retrovault.domain.evidence.MatchSignal
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.observation.FileObservation
+import com.retrovault.domain.resolution.ArtifactResolution
 import com.retrovault.domain.resolution.ArtifactResolver
 import com.retrovault.domain.resolution.ConfidenceLevel
 import com.retrovault.domain.resolution.ResolutionState
@@ -272,11 +274,11 @@ private class Tally {
     }
 
     @Synchronized
-    fun resolved(resolution: com.retrovault.domain.resolution.ArtifactResolution) {
+    fun resolved(resolution: ArtifactResolution) {
         val hashesComputed = summary.hashesComputed + resolution.hashesComputed.size
         val skipped = summary.hashingSkippedBySizeFilter + if (
             resolution.pipelineEvidence.any {
-                it.signal == com.retrovault.domain.evidence.MatchSignal.SizeAbsentFromCatalog
+                it.signal == MatchSignal.SizeAbsentFromCatalog
             }
         ) {
             1
@@ -324,18 +326,35 @@ private class PersistBuffer(
     private val mutex = Mutex()
     private val pending = mutableListOf<ResolvedObservation>()
 
+    /**
+     * The first write that failed, if any.
+     *
+     * A scan of a large library flushes hundreds of batches before the final
+     * one. Discarding those results - as an earlier version did - meant a
+     * database that started failing part-way through produced a scan that
+     * reported success and a rename plan missing most of its files, with
+     * nothing anywhere saying why. The first failure is kept because it is the
+     * one that explains the rest.
+     */
+    private var firstFailure: RetroVaultFailure? = null
+
     suspend fun add(resolved: ResolvedObservation) {
         val batch = mutex.withLock {
             pending.add(resolved)
             if (pending.size >= batchSize) pending.toList().also { pending.clear() } else null
         }
-        batch?.let { repository.saveAll(it) }
+        batch?.let { write(it) }
     }
 
-    /** @return the failure if the final flush could not be persisted. */
+    /** @return the first failure of the whole scan, or `null` if everything persisted. */
     suspend fun flush(): RetroVaultFailure? {
         val batch = mutex.withLock { pending.toList().also { pending.clear() } }
-        if (batch.isEmpty()) return null
-        return (repository.saveAll(batch) as? Outcome.Failure)?.failure
+        if (batch.isNotEmpty()) write(batch)
+        return mutex.withLock { firstFailure }
+    }
+
+    private suspend fun write(batch: List<ResolvedObservation>) {
+        val failure = (repository.saveAll(batch) as? Outcome.Failure)?.failure ?: return
+        mutex.withLock { if (firstFailure == null) firstFailure = failure }
     }
 }

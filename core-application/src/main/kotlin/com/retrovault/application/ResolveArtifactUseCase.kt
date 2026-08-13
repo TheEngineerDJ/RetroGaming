@@ -1,6 +1,7 @@
 package com.retrovault.application
 
 import com.retrovault.domain.catalog.CatalogueCoverage
+import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.observation.FileObservation
 import com.retrovault.domain.resolution.ArtifactResolution
 import com.retrovault.domain.resolution.ArtifactResolver
@@ -83,7 +84,7 @@ class ResolveArtifactUseCase(
      * unmatched files.
      */
     private suspend fun catalogRecords(
-        query: suspend () -> List<com.retrovault.domain.catalog.DumpRecord>,
+        query: suspend () -> List<DumpRecord>,
     ): EvidenceResponse = try {
         EvidenceResponse.CatalogRecords(query())
     } catch (cancellation: CancellationException) {

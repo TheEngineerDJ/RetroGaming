@@ -54,8 +54,6 @@ data class DatSourceRef(
         require(setName.isNotBlank()) { "DAT set name must not be blank" }
     }
 
-    /** Stable, namespaced external reference (DATABASE.md section 3). */
-    val externalNamespace: String get() = "$provider:${version ?: "unversioned"}"
 }
 
 /**
@@ -129,15 +127,6 @@ data class DumpRecord(
     val romExtension: String?
         get() = romName.substringAfterLast('.', missingDelimiterValue = "").takeIf { it.isNotEmpty() }
 
-    /** The strongest hash this record can be matched on, if any. */
-    val strongestAvailableHash: HashAlgorithm?
-        get() = when {
-            hashes.contains(HashAlgorithm.SHA1) -> HashAlgorithm.SHA1
-            hashes.contains(HashAlgorithm.MD5) -> HashAlgorithm.MD5
-            hashes.contains(HashAlgorithm.CRC32) -> HashAlgorithm.CRC32
-            else -> null
-        }
-
     /**
      * The identity this record points at, ignoring which dataset described it.
      *
@@ -209,8 +198,10 @@ data class DumpRecord(
 /**
  * A dataset-independent identity fingerprint.
  *
- * DOMAIN_MODEL.md section 43: automated matching may propose identity links,
- * but this key only ever *groups* records; it never merges canonical entities.
+ * DOMAIN_MODEL.md section 34: merge only when identity equivalence is
+ * sufficiently established, and link entities as related rather than merge them
+ * when uncertain. This key only ever *groups* records for comparison; it never
+ * merges canonical entities.
  */
 data class CanonicalIdentityKey(
     val platform: String,

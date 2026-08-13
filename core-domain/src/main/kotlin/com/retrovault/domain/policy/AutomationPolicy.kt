@@ -1,5 +1,6 @@
 package com.retrovault.domain.policy
 
+import com.retrovault.domain.evidence.EvidenceStrength
 import com.retrovault.domain.resolution.ArtifactResolution
 import com.retrovault.domain.resolution.ResolutionState
 
@@ -99,6 +100,5 @@ data class AutomationPolicy(
     }
 }
 
-private val com.retrovault.domain.evidence.EvidenceStrength.isBlocking: Boolean
-    get() = this == com.retrovault.domain.evidence.EvidenceStrength.DECISIVE ||
-        this == com.retrovault.domain.evidence.EvidenceStrength.STRONG
+private val EvidenceStrength.isBlocking: Boolean
+    get() = this == EvidenceStrength.DECISIVE || this == EvidenceStrength.STRONG

@@ -1068,4 +1068,30 @@ class ArtifactResolverTest {
 
         assertEquals(AutomationDecision.FORBIDDEN, AutomationPolicy().decide(resolution))
     }
+
+    @Test
+    fun `an exact state is never claimed without an algorithm that verified it`() {
+        // A catalogue answering a SHA1 lookup with a record carrying no SHA1
+        // would otherwise reach EXACT_HASH with nothing verified. CRC32 and size
+        // still agree, which is exactly what a structural match is - so the
+        // result degrades rather than overstating.
+        val hashless = Fixtures.record(
+            setName = "Some Game (USA)",
+            hashes = Fixtures.digests(goodCrc),
+        )
+        val driver = TestCatalogDriver(
+            records = listOf(hashless),
+            content = mapOf(null to Fixtures.digests(goodCrc, goodSha1)),
+            answerEveryHashLookupWith = listOf(hashless),
+        )
+
+        val resolution = driver.resolve(Fixtures.observation("Some Game (USA).sfc"))
+
+        assertFalse(
+            resolution.state.isExact,
+            "EXACT was claimed with no verified hash: ${resolution.state}",
+        )
+        assertFalse(resolution.isVerified)
+        assertEquals(ResolutionState.STRUCTURAL_MATCH, resolution.state)
+    }
 }

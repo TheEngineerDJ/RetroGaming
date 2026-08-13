@@ -23,11 +23,14 @@ class ArchitectureBoundaryTest {
         "java.sql" to "SQL",
         "java.net" to "network access",
         "javax.xml" to "XML parsing",
-        "com.retrovault.data" to "a persistence implementation",
-        "com.retrovault.dat" to "a parser implementation",
-        "com.retrovault.io" to "an I/O implementation",
-        "com.retrovault.platform" to "a platform implementation",
-        "com.retrovault.app" to "the presentation layer",
+        // Dot-terminated on purpose: `com.retrovault.app` is a prefix of
+        // `com.retrovault.application`, so the bare form would flag this
+        // module's own package declaration as a violation of itself.
+        "com.retrovault.data." to "a persistence implementation",
+        "com.retrovault.dat." to "a parser implementation",
+        "com.retrovault.io." to "an I/O implementation",
+        "com.retrovault.platform." to "a platform implementation",
+        "com.retrovault.app." to "the presentation layer",
     )
 
     @Test
@@ -56,5 +59,34 @@ class ArchitectureBoundaryTest {
             "The application layer must not depend on an implementation:\n" +
                 violations.joinToString("\n"),
         )
+    }
+
+    @Test
+    fun `a forbidden dependency cannot hide behind a fully qualified name`() {
+        // The check above reads import lines. Writing the same dependency as a
+        // fully qualified name in the body would satisfy the compiler and slip
+        // past it, so the body is checked too. Comments are excluded: a rule is
+        // allowed to explain what it forbids.
+        val path = System.getProperty("retrovault.moduleSourceDir")
+            ?: fail("retrovault.moduleSourceDir is not set; the build must provide it")
+        val violations = mutableListOf<String>()
+
+        File(path).walkTopDown().filter { it.extension == "kt" }.forEach { file ->
+            file.readLines().forEachIndexed { index, line ->
+                val code = line.substringBefore("//").trim()
+                if (code.startsWith("import ") || code.startsWith("package ") ||
+                    code.startsWith("*") || code.startsWith("/*")
+                ) {
+                    return@forEachIndexed
+                }
+                forbiddenPrefixes.forEach { (prefix, description) ->
+                    if (code.contains(prefix)) {
+                        violations += "${file.name}:${index + 1} names $prefix inline ($description)"
+                    }
+                }
+            }
+        }
+
+        assertTrue(violations.isEmpty(), violations.joinToString("\n"))
     }
 }

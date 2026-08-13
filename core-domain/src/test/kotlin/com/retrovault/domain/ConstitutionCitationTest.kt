@@ -116,6 +116,39 @@ class ConstitutionCitationTest {
     }
 
     @Test
+    fun `every derived specification the source cites exists, with the section cited`() {
+        // The constitution is not the only document the source justifies itself
+        // against. A citation of ARCHITECTURE.md or DATABASE.md is a promise
+        // that the rule is written down somewhere a reader can check, and one
+        // that points at nothing is worse than no citation at all - it looks
+        // like authority and carries none.
+        val specCitation = Regex("""([A-Z_]+\.md) section (\d+)""")
+        val declaredBy = mutableMapOf<String, Set<String>>()
+        val dangling = mutableListOf<String>()
+
+        sourceFiles().forEach { file ->
+            file.readLines().forEachIndexed { index, line ->
+                specCitation.findAll(line).forEach { match ->
+                    val (document, section) = match.destructured
+                    val sections = declaredBy.getOrPut(document) {
+                        val spec = File(repoRoot, document)
+                        if (!spec.exists()) {
+                            emptySet()
+                        } else {
+                            sectionHeading.findAll(spec.readText()).map { it.groupValues[1] }.toSet()
+                        }
+                    }
+                    if (section !in sections) {
+                        dangling += "${file.name}:${index + 1} cites $document section $section"
+                    }
+                }
+            }
+        }
+
+        assertTrue(dangling.isEmpty(), dangling.joinToString("\n"))
+    }
+
+    @Test
     fun `no source file contains a control character`() {
         // A stray NUL makes a file read as binary to grep, diff and review
         // tooling, which is how one went unnoticed here for two commits.

@@ -211,6 +211,16 @@ data class ReconciliationEvidence(
     val destinationSize: Long?,
     /** Whether the operation's staging name is present on disk. */
     val intermediateExists: Boolean = false,
+    /**
+     * Whether storage could actually be read.
+     *
+     * `false` means the answers above are absences by default rather than by
+     * observation - the provider refused, the volume was unmounted, the
+     * permission had lapsed. A file RetroVault could not look at is not a file
+     * RetroVault saw was missing, and the difference decides whether a verdict
+     * is evidence or a guess.
+     */
+    val storageReadable: Boolean = true,
 )
 
 /**
@@ -227,6 +237,20 @@ object RenameReconciler {
         atEpochMillis: Long,
     ): RenameOperation {
         if (operation.state.isTerminal) return operation
+
+        // Constitution section 341: when uncertain, say uncertain. Every verdict
+        // below reads an absence as evidence, which is only sound when an
+        // absence was actually observed.
+        if (!evidence.storageReadable) {
+            return operation.copy(
+                state = RenameOperationState.RECONCILED_UNKNOWN,
+                finishedAtEpochMillis = atEpochMillis,
+                failure = RenameFailure.Unexpected(
+                    "The storage location could not be read, so whether this rename took effect is " +
+                        "unknown. Reconnect the storage and reconcile again.",
+                ),
+            )
+        }
 
         val destinationLooksRight =
             evidence.destinationExists && evidence.destinationSize == operation.preconditionSize
