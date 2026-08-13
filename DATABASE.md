@@ -366,3 +366,23 @@ Entity writes are idempotent because identifiers are derived from the identity t
 `identity_correction` is append-only. Superseding updates the previous row's state and inserts a new one; withdrawing marks a row rather than deleting it. A correction has no foreign key to `dat_source` or `dump_record` on purpose — it is the user's, and removing a dataset must not remove their decision.
 
 `dump_record.release_id` stores the release each record projects into. It is backfilled by a Kotlin migration step rather than in SQL: the key derives from a normalized title and sorted region and flag lists, and reproducing that ordering in SQL would be a second implementation free to drift from the first. `Schema.Migration.afterStatements` exists for exactly this case — DATABASE.md section 15 requires migration code to be deterministic, not to be SQL. The backfill reads in bounded batches so an upgrade does not hold a large catalogue in memory.
+
+
+## Schema version 5 — when an entity was first seen and last changed
+
+`first_seen_at` and `last_updated_at` are added to the four entity tables. Both are `NOT NULL DEFAULT 0`, and 0 is read as *unknown* rather than as the epoch: a row that predates this column was never observed at 1 January 1970, and backdating it would fabricate an observation. `EntityTimestamps.of` performs that reading, so no caller has to remember it.
+
+Entity writes became read-modify-write at this version. The previous `ON CONFLICT ... DO UPDATE` could not both retain the outgoing display name as an alias and leave `first_seen_at` alone, and doing it in the caller would have been a rule the SQL no longer enforced. The read still refuses to touch a `CONFIRMED` row, so a skipped write leaves its timestamp alone too — a write that changed nothing is not an update.
+
+Retaining the outgoing display name as an alias is what makes historical identity recoverable (Constitution sections 41 and 70, DOMAIN_MODEL invariant 12) without a temporal system. A name is never listed as one of its own aliases.
+
+
+## Reading the graph
+
+`SqlEntityQueries` implements the `EntityQueries` port. Every list query fetches `limit + 1` rows so `EntityPage.hasMore` is measured rather than guessed; a `COUNT(*)` to find out would double the cost of every browse.
+
+Search terms are escaped for `%`, `_` and `\` and matched with `ESCAPE '\'`. Work search additionally matches `normalized_title`, normalizing the query with the same `TitleNormalizer` the resolver uses.
+
+`artifactsOfRelease` is unbounded on purpose: a release has a handful of digital images, not a page of them.
+
+`contributingSources` joins `dat_source` through `dump_record.release_id`, which is why that column exists for reads as well as for corrections. Rows whose relationship type or endpoint kind this build cannot read are skipped rather than guessed at, so a database written by a later version degrades instead of failing.

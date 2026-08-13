@@ -871,7 +871,7 @@ This prevents ontology bloat while protecting important distinctions.
 
 `ResolutionState` gains `OUT_OF_CATALOGUE_SCOPE`, distinct from `NO_MATCH`. `NO_MATCH` means the datasets cover this medium and do not list this artifact; `OUT_OF_CATALOGUE_SCOPE` means they never had standing to say anything.
 
-`IdentityBasis` — `VERIFIED_CONTENT`, `STRUCTURAL`, `INFERRED`, `NONE` — is derived from the resolution state and answers "resting on what", where confidence answers "how sure". A state that may carry a selected identity always has a basis other than `NONE`, and a state that may not always has `NONE`.
+`IdentityBasis` — `VERIFIED_CONTENT`, `STRUCTURAL`, `INFERRED`, `USER_ASSERTED`, `NONE` — is derived from the resolution state and answers "resting on what", where confidence answers "how sure". A state that may carry a selected identity always has a basis other than `NONE`, and a state that may not always has `NONE`. `USER_ASSERTED` is deliberately not folded into `VERIFIED_CONTENT`: a person naming a release is the highest authority over their own collection and is still not a statement about the bytes.
 
 
 ## The canonical entity model
@@ -913,4 +913,28 @@ Section 40 lists many more relations. Each needs an entity type RetroVault does 
 
 **History is append-only.** Superseding writes a new row and marks the old one, so "what did I say before, and why" stays answerable (section 70). Withdrawing marks a row withdrawn, which is a different fact from never having corrected.
 
-A corrected identity may be renamed without further confirmation: the correction *is* the per-file confirmation `REQUIRES_REVIEW` exists to obtain. A rejected one is never renamed.
+**Correcting an identity is not authorising a rename.** A correction settles what RetroVault *believes*; whether the file may be touched is a separate question, because confidence alone never authorises a mutation (Constitution section 262) and an assertion is a claim about identity rather than a measurement of it. So `USER_CORRECTED` is reviewable like any other unverified identity. It becomes `AUTOMATIC` only when the content independently agrees — when a cryptographic hash of the bytes matches the digest catalogued for the release the user named — and then the rename rests on the measurement, with the correction having merely pointed at it. CRC32 agreement does not count (section 148). A rejected identity is never renamed at all.
+
+`Candidate.hasIndependentContentAgreement` reads that from the evidence rather than from the resolution state, so the answer follows what was actually established rather than how the identity arrived. It matches on the signal's stable id, not on its Kotlin type: a persisted signal returns from storage as `MatchSignal.Recorded`, and the rename planner only ever sees persisted resolutions.
+
+## Reading the entity graph
+
+`EntityQueries` (application layer) is the read surface for `Platform -> Work -> Release -> Artifact`, separate from `EntityGraph`, which writes it. The split is not ceremony: a caller that only browses should not be able to promote or relate, and the read surface is where result bounds and provenance exposure are enforced.
+
+**Every list query is bounded.** `EntityPage<T>` carries `hasMore`, measured by fetching one row more than the caller asked for rather than by a second `COUNT(*)`. Section 249 requires bounded memory for large collections, and a page that cannot say it was truncated misleads the user about their own library. `MAX_LIMIT` is a ceiling a caller cannot raise; an out-of-range limit is clamped rather than honoured or rejected.
+
+**Search matches aliases and normalized titles**, using the same normalizer the resolver uses, so "Legend of Zelda, The" finds a work stored as "The Legend of Zelda" without a second set of rules to keep in step. Section 43 makes aliases search aids. User search text is escaped before it reaches `LIKE`: someone typing `100%` is searching for a title, not writing a wildcard.
+
+**Relationships are returned in both directions.** A release's incoming `IMAGE_OF` edges are how a caller reaches its artifacts; a graph that could only be walked downwards would leave half of it unreachable.
+
+**`provenanceOf` hides nothing.** It carries the entity's provenance, its timestamps, its aliases, the datasets whose records project into it (section 196: a dataset must never become an invisible authority), every edge touching it, and — for an artifact — the complete correction history including superseded and withdrawn entries. A history that shows only the current answer is not a history (section 70). `independentSourceCount` counts datasets rather than claiming corroboration, because several sources are not automatically independent confirmation (section 46).
+
+## Historical identity
+
+Constitution sections 41 and 70 and invariant 12 require earlier knowledge to stay reconstructable. RetroVault does not yet have a temporal system, and inventing one before there are dated facts to hold would be architecture ahead of evidence. What is implemented is the minimum that stops history being *destroyed* in the meantime:
+
+- **A display name an entity stops carrying is retained as an alias.** Section 43 already lists historical names among the aliases an entity must preserve, so this needs no new concept: a user searching for what their library used to be called still finds it.
+- **`first_seen_at` and `last_updated_at`** record when RetroVault learned about an entity and when it last changed its mind. `EntityTimestamps` reports the migration default as *unknown* rather than as 1 January 1970 — "the row predates RetroVault recording this" is a different fact from a timestamp at the epoch, and reporting one as the other would be a fabricated observation.
+- **Correction history is append-only**, so what a user asserted before a supersession stays answerable.
+
+Release dates, manufacture dates, acquisition dates and the rest of section 41's list are facts about entities RetroVault does not model yet. They arrive with those entities.

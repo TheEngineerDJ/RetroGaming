@@ -16,7 +16,7 @@ import com.retrovault.domain.identity.MediaTypeVocabulary
  */
 object Schema {
 
-    const val CURRENT_VERSION: Int = 4
+    const val CURRENT_VERSION: Int = 5
 
     /**
      * Applies every migration needed to bring [database] up to date.
@@ -25,13 +25,6 @@ object Schema {
      */
     fun migrate(database: SqlDatabase): Int = migrateTo(database, CURRENT_VERSION)
 
-    /**
-     * Applies migrations up to [targetVersion] only.
-     *
-     * Exists so that an upgrade can be tested from the schema version users
-     * actually have, rather than only ever from an empty database. A migration
-     * that is only exercised on a fresh install is a migration nobody has run.
-     */
     /**
      * One schema version.
      *
@@ -45,6 +38,13 @@ object Schema {
         val afterStatements: (SqlDatabase) -> Unit = {},
     )
 
+    /**
+     * Applies migrations up to [targetVersion] only.
+     *
+     * Exists so that an upgrade can be tested from the schema version users
+     * actually have, rather than only ever from an empty database. A migration
+     * that is only exercised on a fresh install is a migration nobody has run.
+     */
     internal fun migrateTo(database: SqlDatabase, targetVersion: Int): Int = database.transaction {
         // Foreign-key enforcement is switched on by each binding when it opens
         // the connection, not here. `PRAGMA foreign_keys` is a no-op inside a
@@ -82,7 +82,38 @@ object Schema {
         2 to Migration(version2()),
         3 to Migration(version3()),
         4 to Migration(version4(), ::backfillReleaseIds),
+        5 to Migration(version5()),
     )
+
+    /**
+     * When RetroVault first learned an entity, and when it last changed.
+     *
+     * The minimum Constitution section 41 and section 70 need to be honoured
+     * without a temporal system: "when did RetroVault first know this" and
+     * "when did it last change its mind" become answerable, and a provenance
+     * report can say so.
+     *
+     * This is deliberately *not* bitemporality. There is no valid-time, no
+     * as-of query and no version table. What section 37 invariant 12 requires -
+     * that historical identity remains recoverable - is served instead by never
+     * discarding a name: a derived entity whose title changes keeps the old one
+     * as an alias, which section 43 already lists historical names among.
+     *
+     * Existing rows get 0, which reads as "before RetroVault started recording
+     * this" rather than as the epoch. A provenance report shows it as unknown
+     * rather than as 1 January 1970.
+     */
+    private fun version5(): List<String> = listOf(
+        "platform_entity",
+        "work_entity",
+        "release_entity",
+        "artifact_entity",
+    ).flatMap { table ->
+        listOf(
+            "ALTER TABLE $table ADD COLUMN first_seen_at INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE $table ADD COLUMN last_updated_at INTEGER NOT NULL DEFAULT 0",
+        )
+    }
 
     /**
      * Fills in the release each catalogued record projects into.

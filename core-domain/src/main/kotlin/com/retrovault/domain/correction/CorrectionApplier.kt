@@ -5,6 +5,7 @@ import com.retrovault.domain.entity.EntityPromoter
 import com.retrovault.domain.evidence.Evidence
 import com.retrovault.domain.evidence.EvidenceStrength
 import com.retrovault.domain.evidence.MatchSignal
+import com.retrovault.domain.identity.HashAlgorithm
 import com.retrovault.domain.identity.ReleaseId
 import com.retrovault.domain.resolution.ArtifactResolution
 import com.retrovault.domain.resolution.ConfidenceLevel
@@ -81,18 +82,26 @@ object CorrectionApplier {
     ): ArtifactResolution {
         val asserted = Candidate(
             record = record,
-            supporting = listOf(
-                Evidence.supporting(
-                    MatchSignal.UserCorrection,
-                    // Strong, not decisive. The user is the highest authority
-                    // over their own collection and still has not shown that
-                    // these bytes are that release; IdentityBasis.USER_ASSERTED
-                    // is what carries that distinction to the reader.
-                    EvidenceStrength.STRONG,
-                    describe(correction),
-                    source = record.source,
-                ),
-            ),
+            supporting = buildList {
+                add(
+                    Evidence.supporting(
+                        MatchSignal.UserCorrection,
+                        // Strong, not decisive. The user is the highest
+                        // authority over their own collection and still has not
+                        // shown that these bytes are that release;
+                        // IdentityBasis.USER_ASSERTED carries that distinction.
+                        EvidenceStrength.STRONG,
+                        describe(correction),
+                        source = record.source,
+                    ),
+                )
+                // When the content agrees with what the user named, that
+                // agreement is a measurement and is recorded as one. It is what
+                // lets the rename policy authorise on evidence rather than on
+                // assertion - and when it is absent, its absence is the reason
+                // the rename waits for review.
+                addAll(corroboration(resolution, record))
+            },
             score = 100,
         )
         return resolution.copy(
@@ -104,6 +113,29 @@ object CorrectionApplier {
             candidates = (listOf(asserted) + resolution.candidates.filter { it.record.id != record.id }),
         )
     }
+
+    /**
+     * Content-level agreement between the observed bytes and the named release.
+     *
+     * Only cryptographic hashes count. CRC32 agreeing is a discriminator, not
+     * proof (Constitution section 148), and treating it as verification here
+     * would let a 32-bit collision authorise a rename the user never checked.
+     */
+    private fun corroboration(resolution: ArtifactResolution, record: DumpRecord): List<Evidence> =
+        HashAlgorithm.entries
+            .filter { it.isCryptographicIdentityEvidence }
+            .mapNotNull { algorithm ->
+                val observed = resolution.hashes[algorithm] ?: return@mapNotNull null
+                val catalogued = record.hashes[algorithm] ?: return@mapNotNull null
+                if (observed != catalogued) return@mapNotNull null
+                Evidence.supporting(
+                    MatchSignal.HashExact(algorithm),
+                    EvidenceStrength.DECISIVE,
+                    "${algorithm.canonicalName} of this file matches the release you named, so the " +
+                        "content agrees with your correction.",
+                    source = record.source,
+                )
+            }
 
     private fun reject(resolution: ArtifactResolution, correction: IdentityCorrection): ArtifactResolution =
         resolution.copy(

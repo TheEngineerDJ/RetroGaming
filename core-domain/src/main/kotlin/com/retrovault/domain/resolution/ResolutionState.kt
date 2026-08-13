@@ -221,6 +221,20 @@ data class Candidate(
 
     val evidence: List<Evidence> get() = supporting + contradicting
 
+    /**
+     * Whether the *content* agrees with this candidate, independently of who
+     * proposed it.
+     *
+     * The distinction matters wherever an identity may be asserted rather than
+     * measured. A user naming a release is a claim; a cryptographic hash of the
+     * bytes matching that release's catalogued digest is a measurement, and the
+     * measurement is what may authorise a mutation. Reading it from the
+     * evidence rather than from the resolution state means the answer follows
+     * what was actually established, not how the identity arrived.
+     */
+    val hasIndependentContentAgreement: Boolean
+        get() = supporting.any { it.signal.assertsCryptographicContentMatch }
+
     /** Datasets that independently describe this identity (Constitution section 46). */
     val independentSourceCount: Int
         get() = (listOf(record) + corroborating).map { it.source.id }.distinct().size

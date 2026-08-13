@@ -910,7 +910,11 @@ class VerticalSliceEndToEndTest {
     }
 
     @Test
-    fun `a corrected file is renamed to what the user said, not to what the hash said`() = runTest {
+    fun `a correction the content contradicts is believed but not acted on`() = runTest {
+        // The user's word settles what RetroVault *believes*. It does not settle
+        // what RetroVault may do to the file: these bytes are catalogued as
+        // Chrono Trigger, so nothing independent agrees with the correction and
+        // the rename waits for the user (Constitution section 262).
         val bytes = payload(seed = 77)
         writeTwoGameDat(bytes, payload(seed = 78))
         writeFile("roms/mystery.sfc", bytes)
@@ -924,13 +928,112 @@ class VerticalSliceEndToEndTest {
             corrected = CorrectedIdentity.IsRelease(ReleaseId(releaseIdOf("Super Mario World (USA)"))),
         )
 
+        val rescanned = scan()
+        val resolution = resolutionsByName(rescanned.second).getValue("mystery.sfc")
+        assertEquals(ResolutionState.USER_CORRECTED, resolution.state)
+        assertEquals("Super Mario World", resolution.selected?.record?.canonicalTitle)
+
+        val plan = (
+            GenerateRenamePlanUseCase(observations, clock, ids).generate(rescanned.first) as Outcome.Success
+            ).value
+        val preview = PreviewRenamePlanUseCase(ValidateRenamePlanUseCase(LocalContentSource(), clock)).preview(plan)
+
+        assertEquals(PlannedAction.SKIP_REQUIRES_REVIEW, plan.entries.single().action)
+        assertEquals(PlanVerdict.NOTHING_TO_DO, preview.validation.verdict)
+        assertEquals(
+            listOf("mystery.sfc"),
+            root.resolve("roms").listDirectoryEntries().map { it.name },
+        )
+    }
+
+    @Test
+    fun `a corrected file is renamed to what the user said once the user confirms it`() = runTest {
+        val bytes = payload(seed = 85)
+        writeTwoGameDat(bytes, payload(seed = 86))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val sessionId = scan().first
+        val observation = (observations.findBySession(sessionId) as Outcome.Success).value.single()
+        RecordCorrectionUseCase(corrections, clock, ids).correct(
+            observation = observation.observation,
+            resolution = observation.resolution,
+            corrected = CorrectedIdentity.IsRelease(ReleaseId(releaseIdOf("Super Mario World (USA)"))),
+        )
+
         val rescanned = scan().first
+        val confirmed = (observations.findBySession(rescanned) as Outcome.Success).value.single()
         val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
-        val plan =
-            (GenerateRenamePlanUseCase(observations, clock, ids).generate(rescanned) as Outcome.Success).value
+        val plan = (
+            GenerateRenamePlanUseCase(observations, clock, ids)
+                .generate(rescanned, confirmations = setOf(confirmed.observation.id)) as Outcome.Success
+            ).value
         val result = ExecuteRenamePlanUseCase(validate, LocalRenameExecutor(), journal, clock, ids)
             .execute(plan)
 
+        assertTrue((result as Outcome.Success).value.summary.isFullySuccessful, result.value.summary.toString())
+        assertEquals(
+            listOf("Super Mario World (USA).sfc"),
+            root.resolve("roms").listDirectoryEntries().map { it.name },
+        )
+    }
+
+    @Test
+    fun `a correction the content corroborates is renamed without further confirmation`() = runTest {
+        // Two catalogue identities share these bytes, so automation cannot pick
+        // one. The user picks - and because the chosen record's SHA-1 is the
+        // SHA-1 of the file, the rename rests on the measurement rather than on
+        // the assertion, and needs no second confirmation.
+        val bytes = payload(seed = 87)
+        writeDat(
+            "test.dat",
+            """
+            <datafile>
+              <header><name>Test Console</name><version>1</version></header>
+              <game name="Chrono Trigger (USA)">
+                <rom name="Chrono Trigger (USA).sfc" size="${bytes.size}"
+                     crc="${crc32(bytes)}" sha1="${sha1(bytes)}"/>
+              </game>
+              <game name="Super Mario World (USA)">
+                <rom name="Super Mario World (USA).sfc" size="${bytes.size}"
+                     crc="${crc32(bytes)}" sha1="${sha1(bytes)}"/>
+              </game>
+            </datafile>
+            """.trimIndent(),
+        )
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val sessionId = scan().first
+        assertEquals(
+            ResolutionState.AMBIGUOUS,
+            (observations.findBySession(sessionId) as Outcome.Success).value.single().resolution.state,
+        )
+
+        val observation = (observations.findBySession(sessionId) as Outcome.Success).value.single()
+        RecordCorrectionUseCase(corrections, clock, ids).correct(
+            observation = observation.observation,
+            resolution = observation.resolution,
+            corrected = CorrectedIdentity.IsRelease(ReleaseId(releaseIdOf("Super Mario World (USA)"))),
+        )
+
+        val rescanned = scan()
+        val resolution = resolutionsByName(rescanned.second).getValue("mystery.sfc")
+        assertEquals(ResolutionState.USER_CORRECTED, resolution.state)
+        assertEquals(
+            IdentityBasis.USER_ASSERTED,
+            resolution.identityBasis,
+            "Corroboration does not upgrade an assertion into a measurement",
+        )
+
+        val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+        val plan = (
+            GenerateRenamePlanUseCase(observations, clock, ids).generate(rescanned.first) as Outcome.Success
+            ).value
+        assertEquals(PlannedAction.RENAME, plan.entries.single().action)
+
+        val result = ExecuteRenamePlanUseCase(validate, LocalRenameExecutor(), journal, clock, ids)
+            .execute(plan)
         assertTrue((result as Outcome.Success).value.summary.isFullySuccessful, result.value.summary.toString())
         assertEquals(
             listOf("Super Mario World (USA).sfc"),

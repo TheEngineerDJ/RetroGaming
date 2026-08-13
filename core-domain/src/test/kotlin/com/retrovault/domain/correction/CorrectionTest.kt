@@ -242,15 +242,94 @@ class CorrectionTest {
     // ------------------------------------------------------------------
 
     @Test
-    fun `a corrected identity may be renamed without asking again`() {
-        // The correction *is* the per-file confirmation. Asking a second time
-        // would treat the user's decision as a suggestion.
+    fun `a correction the content does not corroborate still requires review`() {
+        // Identity and authorisation are separate questions. The user has said
+        // what this is; nothing has shown that the bytes agree, so renaming it
+        // is still a decision to be confirmed rather than one already made.
+        val unverified = Fixtures.record(
+            "Super Mario World (USA)",
+            hashes = Fixtures.digests(Fixtures.sha1("9999")),
+        )
         val corrected = CorrectionApplier.apply(
             resolvedAs(wrong),
+            correction(CorrectedIdentity.IsRelease(EntityPromoter.releaseId(unverified.canonicalIdentityKey))),
+        ) { listOf(unverified) }
+
+        assertEquals(ResolutionState.USER_CORRECTED, corrected.state)
+        assertEquals(AutomationDecision.REQUIRES_REVIEW, AutomationPolicy().decide(corrected))
+    }
+
+    @Test
+    fun `a correction the content corroborates may be renamed automatically`() {
+        // Here the rename rests on the measurement - a cryptographic hash of
+        // the bytes matching the digest catalogued for the release the user
+        // named - and the correction merely pointed at it.
+        val corrected = CorrectionApplier.apply(
+            resolvedAs(wrong).copy(hashes = Fixtures.digests(sha1)),
             correction(CorrectedIdentity.IsRelease(EntityPromoter.releaseId(right.canonicalIdentityKey))),
         ) { listOf(right) }
 
+        assertTrue(corrected.selected!!.hasIndependentContentAgreement)
         assertEquals(AutomationDecision.AUTOMATIC, AutomationPolicy().decide(corrected))
+    }
+
+    @Test
+    fun `crc32 agreement alone does not authorise a corrected rename`() {
+        // CRC32 is a discriminator, not proof (Constitution section 148).
+        // Treating it as verification would let a 32-bit collision authorise a
+        // rename the user never checked.
+        val crcOnlyRecord = Fixtures.record("Super Mario World (USA)", hashes = Fixtures.digests(crc))
+        val corrected = CorrectionApplier.apply(
+            resolvedAs(wrong).copy(hashes = Fixtures.digests(crc)),
+            correction(
+                CorrectedIdentity.IsRelease(EntityPromoter.releaseId(crcOnlyRecord.canonicalIdentityKey)),
+            ),
+        ) { listOf(crcOnlyRecord) }
+
+        assertFalse(corrected.selected!!.hasIndependentContentAgreement)
+        assertEquals(AutomationDecision.REQUIRES_REVIEW, AutomationPolicy().decide(corrected))
+    }
+
+    @Test
+    fun `content corroboration never turns a user assertion into verified content`() {
+        // Even when the bytes agree, the *identity* came from a person. The
+        // basis says so, and only the evidence says the content agrees.
+        val corrected = CorrectionApplier.apply(
+            resolvedAs(wrong).copy(hashes = Fixtures.digests(sha1)),
+            correction(CorrectedIdentity.IsRelease(EntityPromoter.releaseId(right.canonicalIdentityKey))),
+        ) { listOf(right) }
+
+        assertEquals(IdentityBasis.USER_ASSERTED, corrected.identityBasis)
+        assertFalse(corrected.isVerified)
+    }
+
+    @Test
+    fun `content agreement survives a resolution being read back from storage`() {
+        // A persisted signal comes back as MatchSignal.Recorded, carrying its id
+        // but not its Kotlin type - and the rename planner only ever sees
+        // persisted resolutions. If authorisation were decided by pattern
+        // matching on the live type, every corroborated correction would
+        // silently drop back to review after a round trip.
+        val corrected = CorrectionApplier.apply(
+            resolvedAs(wrong).copy(hashes = Fixtures.digests(sha1)),
+            correction(CorrectedIdentity.IsRelease(EntityPromoter.releaseId(right.canonicalIdentityKey))),
+        ) { listOf(right) }
+
+        val reloaded = corrected.copy(
+            selected = corrected.selected!!.copy(
+                supporting = corrected.selected!!.supporting.map { evidence ->
+                    evidence.copy(
+                        signal = MatchSignal.Recorded(
+                            evidence.signal.id,
+                            evidence.signal.excludesIdentity,
+                        ),
+                    )
+                },
+            ),
+        )
+
+        assertTrue(reloaded.selected!!.hasIndependentContentAgreement)
+        assertEquals(AutomationDecision.AUTOMATIC, AutomationPolicy().decide(reloaded))
     }
 
     @Test

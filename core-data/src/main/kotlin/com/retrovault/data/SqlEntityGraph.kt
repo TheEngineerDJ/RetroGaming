@@ -1,5 +1,6 @@
 package com.retrovault.data
 
+import com.retrovault.application.Clock
 import com.retrovault.application.EntityGraph
 import com.retrovault.application.Outcome
 import com.retrovault.application.RetroVaultFailure
@@ -36,15 +37,17 @@ import kotlinx.coroutines.withContext
  */
 class SqlEntityGraph(
     private val database: SqlDatabase,
+    private val clock: Clock = Clock { System.currentTimeMillis() },
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : EntityGraph {
 
     override suspend fun save(identity: PromotedIdentity): Outcome<Unit> = write {
         database.transaction {
-            savePlatform(identity)
-            saveWork(identity)
-            saveRelease(identity)
-            saveArtifact(identity)
+            val now = clock.nowEpochMillis()
+            savePlatform(identity, now)
+            saveWork(identity, now)
+            saveRelease(identity, now)
+            saveArtifact(identity, now)
             identity.relationships.forEach(::saveRelationship)
         }
     }
@@ -112,40 +115,86 @@ class SqlEntityGraph(
      * rows that are themselves derived, so an automatic pass can refresh what it
      * proposed and can never quietly undo what a person settled.
      */
-    private fun savePlatform(identity: PromotedIdentity) {
+    private fun savePlatform(identity: PromotedIdentity, now: Long) {
         val platform = identity.platform
+        val existing = existingRow("platform_entity", platform.id.value, "name")
+        if (existing == null) {
+            database.execute(
+                "INSERT INTO platform_entity (id, name, provenance, aliases, first_seen_at, " +
+                    "last_updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                listOf(
+                    platform.id.value,
+                    platform.name.value,
+                    platform.provenance.name,
+                    encode(platform.aliases),
+                    now,
+                    now,
+                ),
+            )
+            return
+        }
+        if (existing.confirmed) return
         database.execute(
-            "INSERT INTO platform_entity (id, name, provenance, aliases) VALUES (?, ?, ?, ?) " +
-                "ON CONFLICT(id) DO UPDATE SET name = excluded.name, aliases = excluded.aliases " +
-                "WHERE platform_entity.provenance = 'DERIVED'",
-            listOf(platform.id.value, platform.name.value, platform.provenance.name, encode(platform.aliases)),
-        )
-    }
-
-    private fun saveWork(identity: PromotedIdentity) {
-        val work = identity.work
-        database.execute(
-            "INSERT INTO work_entity (id, canonical_title, normalized_title, provenance, aliases) " +
-                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET " +
-                "canonical_title = excluded.canonical_title, aliases = excluded.aliases " +
-                "WHERE work_entity.provenance = 'DERIVED'",
+            "UPDATE platform_entity SET name = ?, aliases = ?, last_updated_at = ? WHERE id = ?",
             listOf(
-                work.id.value,
-                work.canonicalTitle,
-                work.normalizedTitle.key,
-                work.provenance.name,
-                encode(work.aliases),
+                platform.name.value,
+                encode(retainedNames(existing, platform.name.value, platform.aliases)),
+                now,
+                platform.id.value,
             ),
         )
     }
 
-    private fun saveRelease(identity: PromotedIdentity) {
+    private fun saveWork(identity: PromotedIdentity, now: Long) {
+        val work = identity.work
+        val existing = existingRow("work_entity", work.id.value, "canonical_title")
+        if (existing == null) {
+            database.execute(
+                "INSERT INTO work_entity (id, canonical_title, normalized_title, provenance, aliases, " +
+                    "first_seen_at, last_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                listOf(
+                    work.id.value,
+                    work.canonicalTitle,
+                    work.normalizedTitle.key,
+                    work.provenance.name,
+                    encode(work.aliases),
+                    now,
+                    now,
+                ),
+            )
+            return
+        }
+        if (existing.confirmed) return
+        database.execute(
+            "UPDATE work_entity SET canonical_title = ?, aliases = ?, last_updated_at = ? WHERE id = ?",
+            listOf(
+                work.canonicalTitle,
+                encode(retainedNames(existing, work.canonicalTitle, work.aliases)),
+                now,
+                work.id.value,
+            ),
+        )
+    }
+
+    private fun saveRelease(identity: PromotedIdentity, now: Long) {
         val release = identity.release
+        val existing = existingRow("release_entity", release.id.value, "id")
+        if (existing != null) {
+            if (existing.confirmed) return
+            database.execute(
+                "UPDATE release_entity SET aliases = ?, last_updated_at = ? WHERE id = ?",
+                listOf(
+                    encode(existing.aliases + release.aliases),
+                    now,
+                    release.id.value,
+                ),
+            )
+            return
+        }
         database.execute(
             "INSERT INTO release_entity (id, work_id, platform_id, regions, languages, revision, " +
-                "version, disc_number, flags, provenance, aliases) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET " +
-                "aliases = excluded.aliases WHERE release_entity.provenance = 'DERIVED'",
+                "version, disc_number, flags, provenance, aliases, first_seen_at, last_updated_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             listOf(
                 release.id.value,
                 release.workId.value,
@@ -158,26 +207,47 @@ class SqlEntityGraph(
                 encode(release.flags.map { it.name }.sorted()),
                 release.provenance.name,
                 encode(release.aliases),
+                now,
+                now,
             ),
         )
     }
 
-    private fun saveArtifact(identity: PromotedIdentity) {
+    private fun saveArtifact(identity: PromotedIdentity, now: Long) {
         val artifact = identity.artifact
-        database.execute(
-            "INSERT INTO artifact_entity (id, release_id, media_type, size, provenance, aliases) " +
-                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET " +
-                "media_type = excluded.media_type, size = excluded.size, aliases = excluded.aliases " +
-                "WHERE artifact_entity.provenance = 'DERIVED'",
-            listOf(
-                artifact.id.value,
-                artifact.releaseId.value,
-                artifact.mediaType.name,
-                artifact.size,
-                artifact.provenance.name,
-                encode(artifact.aliases),
-            ),
-        )
+        val existing = existingRow("artifact_entity", artifact.id.value, "id")
+        if (existing == null) {
+            database.execute(
+                "INSERT INTO artifact_entity (id, release_id, media_type, size, provenance, aliases, " +
+                    "first_seen_at, last_updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                listOf(
+                    artifact.id.value,
+                    artifact.releaseId.value,
+                    artifact.mediaType.name,
+                    artifact.size,
+                    artifact.provenance.name,
+                    encode(artifact.aliases),
+                    now,
+                    now,
+                ),
+            )
+        } else if (!existing.confirmed) {
+            database.execute(
+                "UPDATE artifact_entity SET media_type = ?, size = ?, aliases = ?, last_updated_at = ? " +
+                    "WHERE id = ?",
+                listOf(
+                    artifact.mediaType.name,
+                    artifact.size,
+                    // Every rom name this artifact has been catalogued under is
+                    // kept. They are the historical names section 43 lists, and
+                    // dropping one would make an earlier identity unrecoverable
+                    // (DOMAIN_MODEL.md section 37 invariant 12).
+                    encode(existing.aliases + artifact.aliases),
+                    now,
+                    artifact.id.value,
+                ),
+            )
+        }
         artifact.hashes.asList().forEach { hash ->
             database.execute(
                 "INSERT OR REPLACE INTO artifact_hash (artifact_id, algorithm, digest) VALUES (?, ?, ?)",
@@ -208,6 +278,46 @@ class SqlEntityGraph(
                 relationship.note,
             ),
         )
+    }
+
+    /** One stored row's identity-bearing bits, for a history-preserving update. */
+    private data class ExistingEntity(
+        val displayName: String?,
+        val aliases: Set<String>,
+        val confirmed: Boolean,
+    )
+
+    private fun existingRow(table: String, id: String, nameColumn: String): ExistingEntity? =
+        database.queryOne(
+            "SELECT $nameColumn, aliases, provenance FROM $table WHERE id = ?",
+            listOf(id),
+        ) { row ->
+            ExistingEntity(
+                displayName = row.getStringOrNull(0),
+                aliases = row.getString(1).splitList().toSet(),
+                confirmed = row.getString(2) == "CONFIRMED",
+            )
+        }
+
+    /**
+     * The names an entity should carry after an update.
+     *
+     * A derived entity's display name can change when a dataset is re-imported
+     * with different wording. Overwriting it would make the earlier name
+     * unrecoverable, which DOMAIN_MODEL.md section 37 invariant 12 forbids - so
+     * the outgoing name is kept as an alias instead. Constitution section 43
+     * already lists historical names among what aliases are for, which is why
+     * this needs no new storage and no temporal system.
+     */
+    private fun retainedNames(
+        existing: ExistingEntity,
+        newName: String,
+        newAliases: Set<String>,
+    ): Set<String> = buildSet {
+        addAll(existing.aliases)
+        addAll(newAliases)
+        existing.displayName?.takeIf { it != newName }?.let(::add)
+        remove(newName)
     }
 
     // ------------------------------------------------------------- plumbing

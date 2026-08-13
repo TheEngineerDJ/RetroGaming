@@ -234,6 +234,30 @@ sealed interface MatchSignal {
         override val id: String,
         override val excludesIdentity: Boolean,
     ) : MatchSignal
+
+    /**
+     * Whether this signal asserts that a cryptographic hash of the bytes agreed.
+     *
+     * Answered from [id] rather than from the Kotlin type, because a signal read
+     * back from the database arrives as [Recorded] and must mean exactly what it
+     * meant when it was written. A policy that pattern-matched on [HashExact]
+     * would silently stop recognising content agreement the moment a resolution
+     * made a round trip through storage - which is the only form the rename
+     * planner ever sees.
+     *
+     * CRC32 is deliberately excluded: Constitution section 148 makes it a
+     * discriminator, not proof.
+     */
+    val assertsCryptographicContentMatch: Boolean
+        get() = id in CRYPTOGRAPHIC_HASH_EXACT_IDS
+
+    companion object {
+        private val CRYPTOGRAPHIC_HASH_EXACT_IDS: Set<String> =
+            HashAlgorithm.entries
+                .filter { it.isCryptographicIdentityEvidence }
+                .map { HashExact(it).id }
+                .toSet()
+    }
 }
 
 /**

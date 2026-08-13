@@ -234,12 +234,18 @@ The source cites constitutional sections by number, so those citations are check
 
 **Correction application.** Overrides an exact hash match; is never presented as content verification; the overruled candidate survives with its evidence; the reason and previous claim reach the explanation; a rejection selects nothing; naming a release RetroVault can no longer find is still a rejection; a superseded or withdrawn correction changes nothing; applying twice is idempotent.
 
-**Automation.** A corrected identity may be renamed without asking again; a rejected one never is.
+**Automation.** A correction the content does not corroborate still requires review; one a cryptographic hash corroborates may be renamed automatically; CRC32 agreement alone does not authorise it; corroboration never turns a user assertion into verified content; content agreement survives a resolution being read back from storage, where signals arrive as `Recorded`; a rejected identity is never renamed.
 
 **History.** Superseding preserves the earlier correction; a superseded correction must name its successor; only active corrections reach a scan.
 
 **Persistence.** Promoting twice writes one graph; a derived write never demotes a confirmed entity or edge; a release resolves back to the records describing it; unmatchable records are not offered; deleting a work cascades; a correction outlives the catalogue it was made against.
 
-**End to end.** A scan projects what it identified into the graph; rescanning does not duplicate it; a correction survives a rescan and outranks an exact hash match; a corrected file is renamed to what the user said; withdrawing restores automatic identification; a rejection stops the rename entirely; correction history survives the dataset.
+**End to end.** A scan projects what it identified into the graph; rescanning does not duplicate it; a correction survives a rescan and outranks an exact hash match; a correction the content contradicts is believed but not acted on; the same file is renamed once the user confirms it; a correction the content corroborates is renamed without further confirmation; withdrawing restores automatic identification; a rejection stops the rename entirely; correction history survives the dataset.
 
-**Migration.** Version 1 reaches version 4 in one pass; the entity graph enforces its own foreign keys; the release-id backfill agrees with what a fresh import writes.
+**Queries.** Platforms and works are found by id and searched by name, alias and normalized title; a search term is never treated as a wildcard; a truncated page says so; a caller cannot raise the bound above the maximum; a work search and a platform filter apply together; releases are reachable from their work and their platform; an artifact carries the hashes that identify it; the graph is walkable in both directions; an unreadable edge type is skipped rather than guessed at.
+
+**Provenance queries.** Every contributing dataset is named; derived and user-established are distinguished; edges travel with the report; an artifact carries its whole correction history including superseded and withdrawn entries; a correction against other content does not surface; only artifacts carry corrections.
+
+**Historical identity.** A display name an entity stops carrying is retained as an alias and stays findable; a current name is never also one of its own aliases; timestamps record first sighting and last change; first sighting never moves; a row predating timestamps reports unknown rather than the epoch; a skipped write to a confirmed entity is not an update.
+
+**Migration.** Version 1 reaches the current version in one pass; the entity graph enforces its own foreign keys; the release-id backfill agrees with what a fresh import writes; version 5 adds timestamps to every entity table without backdating the rows already there.

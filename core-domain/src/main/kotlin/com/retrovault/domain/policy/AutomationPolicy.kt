@@ -80,11 +80,26 @@ data class AutomationPolicy(
             ResolutionState.FUZZY_MATCH,
             -> AutomationDecision.REQUIRES_REVIEW
 
-            // A correction *is* the per-file confirmation that REQUIRES_REVIEW
-            // exists to obtain, made deliberately by the user against these
-            // exact bytes. Asking them to confirm it a second time would treat
-            // their decision as a suggestion.
-            ResolutionState.USER_CORRECTED -> AutomationDecision.AUTOMATIC
+            // A correction settles what RetroVault *believes*; it does not by
+            // itself authorise touching the file. Identity and authorisation
+            // are separate questions (Constitution section 262: confidence
+            // alone never authorises a mutation), and a user assertion is a
+            // claim about identity, not a measurement of it. Constitution
+            // section 263 reads directly: a high-risk action on uncertain
+            // evidence requires human review, and an assertion nothing has
+            // checked is uncertain evidence about the content whoever made it.
+            //
+            // So a correction is reviewable like any other unverified identity,
+            // and becomes automatic only when the content independently agrees
+            // - when a cryptographic hash of the bytes matches the digest
+            // catalogued for the release the user named. Then the rename rests
+            // on the measurement, and the correction merely pointed at it.
+            ResolutionState.USER_CORRECTED ->
+                if (selected.hasIndependentContentAgreement) {
+                    AutomationDecision.AUTOMATIC
+                } else {
+                    AutomationDecision.REQUIRES_REVIEW
+                }
 
             ResolutionState.AMBIGUOUS,
             ResolutionState.CONFLICT,

@@ -362,4 +362,47 @@ class SchemaMigrationTest {
 
         assertEquals(fresh, backfilled)
     }
+
+    // ------------------------------------------------------------------
+    // Version 5: when an entity was first seen and last changed
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `upgrading from version 4 gives every entity table its timestamps`() {
+        Schema.migrateTo(database, 4)
+        database.execute("INSERT INTO platform_entity (id, name) VALUES ('p', 'Test')")
+        database.execute(
+            "INSERT INTO work_entity (id, canonical_title, normalized_title) VALUES ('w', 'Some', 'some')",
+        )
+        database.execute(
+            "INSERT INTO release_entity (id, work_id, platform_id) VALUES ('r', 'w', 'p')",
+        )
+        database.execute("INSERT INTO artifact_entity (id, release_id) VALUES ('a', 'r')")
+
+        Schema.migrate(database)
+
+        assertEquals(Schema.CURRENT_VERSION, Schema.versionOf(database))
+        listOf("platform_entity", "work_entity", "release_entity", "artifact_entity").forEach { table ->
+            assertEquals(1, countOf(table), "$table must keep the row it already had")
+            val stamps = database.query("SELECT first_seen_at, last_updated_at FROM $table") {
+                it.getLong(0) to it.getLong(1)
+            }.single()
+            assertEquals(
+                0L to 0L,
+                stamps,
+                "A row that predates timestamps must not be backdated to a time nobody observed",
+            )
+        }
+    }
+
+    @Test
+    fun `a version 1 database reaches the current version in one pass`() {
+        seedVersion1()
+
+        Schema.migrate(database)
+
+        assertEquals(Schema.CURRENT_VERSION, Schema.versionOf(database))
+        assertEquals(3, countOf("dump_record"))
+        assertEquals(0, countOf("platform_entity"))
+    }
 }
