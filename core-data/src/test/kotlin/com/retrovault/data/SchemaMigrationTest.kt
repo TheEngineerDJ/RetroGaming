@@ -164,10 +164,14 @@ class SchemaMigrationTest {
             "track" to "Some Game (USA) (Track 1).bin",
         ).forEach { (id, romName) ->
             database.execute(
+                // Regions are populated because a real version 2 row is: the
+                // catalogue derives them at import. Seeding them empty would
+                // make the backfill look wrong when it was faithfully
+                // reproducing what the row actually says.
                 "INSERT INTO dump_record (id, source_id, set_name, rom_name, size, platform, " +
                     "canonical_title, normalized_title, status, regions, languages, flags) " +
                     "VALUES (?, 'src', 'Some Game (USA)', ?, 100, 'PSP', 'Some Game', 'some game', " +
-                    "'GOOD', '', '', '')",
+                    "'GOOD', 'USA', '', '')",
                 listOf(id, romName),
             )
         }
@@ -226,5 +230,136 @@ class SchemaMigrationTest {
 
         assertEquals(3, countOf("dump_record"))
         assertEquals(Schema.CURRENT_VERSION, Schema.versionOf(database))
+    }
+
+    // ------------------------------------------------------------------
+    // Version 4: the canonical entity graph and durable corrections
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `upgrading from version 3 adds the entity graph without touching the catalogue`() {
+        Schema.migrateTo(database, 2)
+        seedVersion2WithMedia()
+        Schema.migrateTo(database, 3)
+        val recordsBefore = countOf("dump_record")
+
+        Schema.migrate(database)
+
+        assertEquals(Schema.CURRENT_VERSION, Schema.versionOf(database))
+        assertEquals(recordsBefore, countOf("dump_record"), "A projection must not disturb its source")
+        listOf(
+            "platform_entity",
+            "work_entity",
+            "release_entity",
+            "artifact_entity",
+            "artifact_hash",
+            "entity_relationship",
+            "identity_correction",
+        ).forEach { table -> assertEquals(0, countOf(table), table) }
+    }
+
+    @Test
+    fun `a version 1 database reaches version 4 in one pass`() {
+        // Users upgrade from whatever they have, not from the version before
+        // this one.
+        seedVersion1()
+
+        Schema.migrate(database)
+
+        assertEquals(Schema.CURRENT_VERSION, Schema.versionOf(database))
+        assertEquals(3, countOf("dump_record"))
+        assertEquals(3, countOf("dump_hash"))
+        assertEquals(0, countOf("identity_correction"))
+    }
+
+    @Test
+    fun `the entity graph enforces its own foreign keys`() {
+        Schema.migrate(database)
+
+        val orphanRelease = runCatching {
+            database.execute(
+                "INSERT INTO release_entity (id, work_id, platform_id) VALUES ('r', 'missing', 'also')",
+            )
+        }
+        val orphanArtifact = runCatching {
+            database.execute(
+                "INSERT INTO artifact_entity (id, release_id) VALUES ('a', 'missing')",
+            )
+        }
+
+        assertTrue(orphanRelease.isFailure, "A release must belong to a work that exists")
+        assertTrue(orphanArtifact.isFailure, "An artifact must belong to a release that exists")
+    }
+
+    @Test
+    fun `a correction outlives the catalogue it was made against`() {
+        // Constitution section 69: the previous claim survives. A correction is
+        // the user's, so removing a dataset must not remove their decision.
+        Schema.migrate(database)
+        seedVersion1()
+        database.execute(
+            "INSERT INTO identity_correction (id, scope_algorithm, scope_digest, corrected_kind, " +
+                "recorded_at, state) VALUES ('c1', 'SHA1', 'aa', 'NOT_THIS', 1, 'ACTIVE')",
+        )
+
+        database.execute("DELETE FROM dat_source")
+
+        assertEquals(0, countOf("dump_record"))
+        assertEquals(1, countOf("identity_correction"))
+    }
+
+    @Test
+    fun `upgrading backfills the release each catalogued record projects into`() {
+        // A correction names a release. Without this, only records imported
+        // after the upgrade could be named, so a user upgrading with a
+        // catalogue already in place could correct nothing.
+        Schema.migrateTo(database, 2)
+        seedVersion2WithMedia()
+        Schema.migrateTo(database, 3)
+
+        Schema.migrate(database)
+
+        val releaseIds = database
+            .query("SELECT DISTINCT release_id FROM dump_record") { it.getStringOrNull(0) }
+        assertTrue(releaseIds.all { it != null && it.startsWith("release:") }, releaseIds.toString())
+        assertEquals(
+            1,
+            releaseIds.size,
+            "All three seeded records are the same release in different forms",
+        )
+    }
+
+    @Test
+    fun `the backfill agrees with what a fresh import would write`() {
+        // The upgrade path and the import path must not derive the key
+        // differently, or an upgraded catalogue answers corrections one way and
+        // a re-imported one another.
+        Schema.migrateTo(database, 2)
+        seedVersion2WithMedia()
+        Schema.migrate(database)
+
+        val backfilled = database
+            .query("SELECT release_id FROM dump_record WHERE id = 'disc'") { it.getString(0) }
+            .single()
+
+        val fresh = com.retrovault.domain.entity.EntityPromoter.releaseId(
+            com.retrovault.domain.catalog.DumpRecord.derive(
+                id = com.retrovault.domain.identity.DumpRecordId("probe"),
+                source = com.retrovault.domain.catalog.DatSourceRef(
+                    id = com.retrovault.domain.identity.DatSourceId("src"),
+                    provider = "redump",
+                    setName = "PSP",
+                    version = "1",
+                    platform = com.retrovault.domain.identity.PlatformName("PSP"),
+                    importedAtEpochMillis = 1,
+                ),
+                setName = "Some Game (USA)",
+                romName = "Some Game (USA).iso",
+                size = 100,
+                hashes = com.retrovault.domain.identity.HashDigests.EMPTY,
+            ).canonicalIdentityKey,
+        ).value
+
+        assertEquals(fresh, backfilled)
     }
 }

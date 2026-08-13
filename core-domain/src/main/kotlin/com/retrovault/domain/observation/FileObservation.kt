@@ -139,6 +139,40 @@ data class FileObservation(
     fun hasHash(algorithm: HashAlgorithm): Boolean = identityBearingHashes().contains(algorithm)
 
     /**
+     * Records digests against whatever the identity-bearing bytes are.
+     *
+     * For a raw file that is the file itself; for a single-entry archive it is
+     * the contained entry, because hashing an archive and hashing the ROM
+     * inside it are different observations (DOMAIN_MODEL.md section 7). Writing
+     * both to the same field would make the archive appear to have the ROM's
+     * digest, which is exactly the conflation that distinction exists to
+     * prevent.
+     */
+    fun withIdentityBearingHashes(digests: HashDigests): FileObservation {
+        if (digests.isEmpty) return this
+        return when (container) {
+            ContainerKind.RAW -> copy(hashes = merge(hashes, digests))
+            ContainerKind.ZIP -> {
+                val entry = candidateArchiveEntries.singleOrNull() ?: return this
+                copy(
+                    archiveEntries = archiveEntries.map { candidate ->
+                        if (candidate.entryPath == entry.entryPath) {
+                            candidate.copy(hashes = merge(candidate.hashes, digests))
+                        } else {
+                            candidate
+                        }
+                    },
+                )
+            }
+
+            ContainerKind.UNSUPPORTED_ARCHIVE -> this
+        }
+    }
+
+    private fun merge(existing: HashDigests, added: HashDigests): HashDigests =
+        added.asList().fold(existing) { accumulated, hash -> accumulated.with(hash) }
+
+    /**
      * The medium the identity-bearing bytes appear to have come from.
      *
      * Derived, not stored: it can be recomputed from the observation at any

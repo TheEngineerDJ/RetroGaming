@@ -1,6 +1,8 @@
 package com.retrovault.application
 
 import com.retrovault.domain.catalog.CatalogueCoverage
+import com.retrovault.domain.correction.CorrectionSet
+import com.retrovault.domain.entity.EntityPromoter
 import com.retrovault.domain.evidence.MatchSignal
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.ObservationId
@@ -82,6 +84,23 @@ class ScanLocationUseCase(
     private val walker: DirectoryWalker,
     private val contentSource: ContentSource,
     private val resolveArtifact: ResolveArtifactUseCase,
+    /**
+     * Applies durable user corrections over automatic identification.
+     *
+     * Optional so an existing caller keeps working unchanged. When absent the
+     * scan behaves exactly as it did before corrections existed, which is the
+     * honest default: no corrections were consulted, so none are claimed.
+     */
+    private val applyCorrections: ApplyCorrectionsUseCase? = null,
+    private val corrections: CorrectionStore? = null,
+    /**
+     * Records the entities each identification implies.
+     *
+     * Also optional. A scan that cannot write the graph is still a valid scan -
+     * the graph is a projection of catalogue evidence and can be rebuilt, so
+     * losing it must never cost the user their scan results.
+     */
+    private val entities: EntityGraph? = null,
     private val catalog: DumpCatalog,
     private val observations: ObservationRepository,
     private val sessions: ScanSessionRepository,
@@ -123,12 +142,24 @@ class ScanLocationUseCase(
             CatalogueCoverage.UNMEASURED
         }
 
+        // Read once, like coverage, and for the same reason: it is the same
+        // answer for every file in the session. A correction store that cannot
+        // answer degrades to "no corrections", which loses the user's overrides
+        // for this run rather than losing the run.
+        val activeCorrections = try {
+            corrections?.active() ?: CorrectionSet.EMPTY
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            CorrectionSet.EMPTY
+        }
+
         val tally = Tally()
         val buffer = PersistBuffer(observations, config.persistBatchSize)
         var cancelled = true
 
         try {
-            runWorkers(root, sessionId, tally, buffer, coverage)
+            runWorkers(root, sessionId, tally, buffer, coverage, activeCorrections)
             cancelled = false
         } finally {
             // The session must be closed out even when the collector walked
@@ -151,6 +182,7 @@ class ScanLocationUseCase(
         tally: Tally,
         buffer: PersistBuffer,
         coverage: CatalogueCoverage,
+        activeCorrections: CorrectionSet,
     ) {
         // Capacity gives the walker a little room to run ahead without letting
         // discovery outpace hashing without bound.
@@ -180,7 +212,7 @@ class ScanLocationUseCase(
         val workers = List(config.concurrency) {
             launch {
                 for (file in work) {
-                    process(file, sessionId, tally, buffer, coverage)
+                    process(file, sessionId, tally, buffer, coverage, activeCorrections)
                 }
             }
         }
@@ -196,6 +228,7 @@ class ScanLocationUseCase(
         tally: Tally,
         buffer: PersistBuffer,
         coverage: CatalogueCoverage,
+        activeCorrections: CorrectionSet,
     ) {
         val container = containerFor(file.name)
         val entries = if (container == ContainerKind.ZIP) {
@@ -225,11 +258,38 @@ class ScanLocationUseCase(
             observedAtEpochMillis = clock.nowEpochMillis(),
         )
 
-        val resolution = resolveArtifact.resolve(observation, coverage)
-        val resolved = ResolvedObservation(observation, resolution)
+        // The resolver reaches its own conclusion from evidence alone; the
+        // correction is applied to that conclusion afterwards. Keeping the two
+        // steps separate is what stops a stored assertion changing what the
+        // evidence appears to say.
+        val automatic = resolveArtifact.resolve(observation, coverage)
+        // The digests the pipeline computed belong to the observation, not only
+        // to the resolution: they are what was *seen*, and they are what a
+        // durable correction is keyed on. Attaching them before the correction
+        // is looked up is what lets an override find its file at all.
+        val observed = observation.withIdentityBearingHashes(automatic.hashes)
+        val resolution = applyCorrections?.apply(automatic, observed, activeCorrections) ?: automatic
+        promote(resolution)
+        val resolved = ResolvedObservation(observed, resolution)
         tally.resolved(resolution)
         buffer.add(resolved)
         send(ScanEvent.FileResolved(resolved, tally.snapshot()))
+    }
+
+    /**
+     * Records the entities this identification implies.
+     *
+     * Only ever runs for a resolution that selected a record, because promoting
+     * an identity RetroVault did not establish would put a proposal into the
+     * graph as though it were a finding. A failure here is deliberately not
+     * reported: the graph is a projection of catalogue evidence and can be
+     * rebuilt by rescanning, so it must not be able to fail a scan whose real
+     * output - the observations and their resolutions - persisted fine.
+     */
+    private suspend fun promote(resolution: ArtifactResolution) {
+        val graph = entities ?: return
+        val record = resolution.selected?.record ?: return
+        graph.save(EntityPromoter.promote(record))
     }
 
     private fun containerFor(filename: String): ContainerKind {

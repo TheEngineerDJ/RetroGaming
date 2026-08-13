@@ -220,3 +220,26 @@ The source cites constitutional sections by number, so those citations are check
 **Guards that guard.** A forbidden dependency written as a fully qualified name in the body, rather than as an import, is caught in both the domain and application boundary tests. Forbidden package prefixes are dot-terminated so `com.retrovault.app` cannot flag `com.retrovault.application`.
 
 **Citations resolve.** Every `<SPEC>.md section N` cited anywhere in the source points at a section that exists, in every derived specification, not only the constitution.
+
+
+## Canonical entities and durable corrections
+
+**Projection.** One record projects into the whole chain with its structural edges; promotion is idempotent; two datasets describing one release converge on one release and one artifact; regional variants and revisions stay separate releases of one work; two representations of one release are two artifacts; a hashless record does not collide with another; everything promoted is `DERIVED`; the dataset's set name survives as an alias.
+
+**Deliberate under-merge.** The same title on two platforms stays two works, because section 32 requires a port to be evidenced rather than inferred.
+
+**Relationships.** An edge must connect the kinds its type declares; an entity cannot relate to itself; an edge is keyed by its endpoints and type; derivation relations exist but are never structural.
+
+**Correction scope.** Keyed by content, so it survives a rename; refused when only CRC32 is available; an archive is corrected by its contained ROM, not by the zip; a correction made against MD5 still applies once SHA1 is known.
+
+**Correction application.** Overrides an exact hash match; is never presented as content verification; the overruled candidate survives with its evidence; the reason and previous claim reach the explanation; a rejection selects nothing; naming a release RetroVault can no longer find is still a rejection; a superseded or withdrawn correction changes nothing; applying twice is idempotent.
+
+**Automation.** A corrected identity may be renamed without asking again; a rejected one never is.
+
+**History.** Superseding preserves the earlier correction; a superseded correction must name its successor; only active corrections reach a scan.
+
+**Persistence.** Promoting twice writes one graph; a derived write never demotes a confirmed entity or edge; a release resolves back to the records describing it; unmatchable records are not offered; deleting a work cascades; a correction outlives the catalogue it was made against.
+
+**End to end.** A scan projects what it identified into the graph; rescanning does not duplicate it; a correction survives a rescan and outranks an exact hash match; a corrected file is renamed to what the user said; withdrawing restores automatic identification; a rejection stops the rename entirely; correction history survives the dataset.
+
+**Migration.** Version 1 reaches version 4 in one pass; the entity graph enforces its own foreign keys; the release-id backfill agrees with what a fresh import writes.

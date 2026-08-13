@@ -193,6 +193,28 @@ sealed interface MatchSignal {
         override val id: String get() = "media_not_covered"
     }
 
+    /**
+     * A person corrected this identification.
+     *
+     * Supporting evidence for what the user asserted, and it is evidence about
+     * *their collection* rather than about the release in general
+     * (DOMAIN_MODEL.md section 37 invariant 13).
+     */
+    data object UserCorrection : MatchSignal {
+        override val id: String get() = "user_correction"
+    }
+
+    /**
+     * A person rejected what RetroVault concluded.
+     *
+     * Excludes the identity outright: a human looking at the artifact outranks
+     * a filename or a structural guess about it.
+     */
+    data object UserRejection : MatchSignal {
+        override val id: String get() = "user_rejection"
+        override val excludesIdentity: Boolean get() = true
+    }
+
     /** Nothing has been imported, so no identification was possible at all. */
     data object NoDatasetsImported : MatchSignal {
         override val id: String get() = "no_datasets_imported"

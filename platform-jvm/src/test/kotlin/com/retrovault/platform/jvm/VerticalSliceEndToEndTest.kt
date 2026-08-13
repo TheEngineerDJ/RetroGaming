@@ -16,6 +16,21 @@ import com.retrovault.application.ScanEvent
 import com.retrovault.application.ScanLocationUseCase
 import com.retrovault.application.StorageLocation
 import com.retrovault.application.ValidateRenamePlanUseCase
+import com.retrovault.application.ApplyCorrectionsUseCase
+import com.retrovault.application.RecordCorrectionUseCase
+import com.retrovault.data.SqlCorrectionStore
+import com.retrovault.data.SqlEntityGraph
+import com.retrovault.domain.catalog.DatSourceRef
+import com.retrovault.domain.catalog.DumpRecord
+import com.retrovault.domain.correction.CorrectedIdentity
+import com.retrovault.domain.entity.EntityPromoter
+import com.retrovault.domain.entity.RelationshipType
+import com.retrovault.domain.identity.DatSourceId
+import com.retrovault.domain.identity.DumpRecordId
+import com.retrovault.domain.identity.HashDigests
+import com.retrovault.domain.identity.PlatformName
+import com.retrovault.domain.identity.ReleaseId
+import com.retrovault.domain.resolution.IdentityBasis
 import com.retrovault.data.Schema
 import com.retrovault.data.SqlDumpCatalog
 import com.retrovault.data.SqlObservationRepository
@@ -56,6 +71,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -75,6 +91,8 @@ class VerticalSliceEndToEndTest {
     private lateinit var observations: SqlObservationRepository
     private lateinit var sessions: SqlScanSessionRepository
     private lateinit var journal: SqlRenameJournalRepository
+    private lateinit var graph: SqlEntityGraph
+    private lateinit var corrections: SqlCorrectionStore
 
     private var now = 1_700_000_000_000L
     private var counter = 0
@@ -91,6 +109,8 @@ class VerticalSliceEndToEndTest {
         observations = SqlObservationRepository(database)
         sessions = SqlScanSessionRepository(database)
         journal = SqlRenameJournalRepository(database)
+        graph = SqlEntityGraph(database)
+        corrections = SqlCorrectionStore(database)
     }
 
     @AfterTest
@@ -155,6 +175,9 @@ class VerticalSliceEndToEndTest {
             walker = LocalDirectoryWalker(),
             contentSource = LocalContentSource(),
             resolveArtifact = ResolveArtifactUseCase(catalog, LocalContentSource()),
+            applyCorrections = ApplyCorrectionsUseCase(graph),
+            corrections = corrections,
+            entities = graph,
             catalog = catalog,
             observations = observations,
             sessions = sessions,
@@ -801,6 +824,213 @@ class VerticalSliceEndToEndTest {
             resolutions.getValue("smw.sfc").selected?.record?.mediaType,
         )
     }
+
+
+    // ------------------------------------------------------------------
+    // The canonical entity model and durable user corrections
+    // ------------------------------------------------------------------
+
+    private fun writeTwoGameDat(first: ByteArray, second: ByteArray) = writeDat(
+        "test.dat",
+        """
+        <datafile>
+          <header><name>Test Console</name><version>1</version></header>
+          <game name="Chrono Trigger (USA)">
+            <rom name="Chrono Trigger (USA).sfc" size="${first.size}"
+                 crc="${crc32(first)}" sha1="${sha1(first)}"/>
+          </game>
+          <game name="Super Mario World (USA)">
+            <rom name="Super Mario World (USA).sfc" size="${second.size}"
+                 crc="${crc32(second)}" sha1="${sha1(second)}"/>
+          </game>
+        </datafile>
+        """.trimIndent(),
+    )
+
+    @Test
+    fun `a scan projects what it identified into the entity graph`() = runTest {
+        val bytes = payload(seed = 71)
+        writeTwoGameDat(bytes, payload(seed = 72))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        scan()
+
+        val release = (graph.findRelease(ReleaseId(releaseIdOf("Chrono Trigger (USA)"))) as Outcome.Success)
+            .value
+        assertNotNull(release, "The identified release must exist as an entity")
+        val edges = (graph.relationshipsFrom(release.entityRef) as Outcome.Success).value
+        assertTrue(edges.any { it.type == RelationshipType.RELEASE_OF })
+        assertTrue(edges.any { it.type == RelationshipType.RUNS_ON })
+    }
+
+    @Test
+    fun `rescanning does not duplicate the graph`() = runTest {
+        val bytes = payload(seed = 73)
+        writeTwoGameDat(bytes, payload(seed = 74))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        scan()
+        val afterFirst = countOf("release_entity") to countOf("artifact_entity")
+        scan()
+
+        assertEquals(afterFirst, countOf("release_entity") to countOf("artifact_entity"))
+    }
+
+    @Test
+    fun `a correction survives a rescan and outranks the exact hash match`() = runTest {
+        // The durability property, end to end: the user overrules the strongest
+        // automatic evidence there is, and the override is still there next
+        // time - keyed on the bytes, not on the scan or the filename.
+        val bytes = payload(seed = 75)
+        writeTwoGameDat(bytes, payload(seed = 76))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val first = resolutionsByName(scan().second).getValue("mystery.sfc")
+        assertTrue(first.state.isExact, "The fixture is set up so automatic identification succeeds")
+
+        val observation = (observations.findBySession(scan().first) as Outcome.Success).value
+            .single { it.observation.filename == "mystery.sfc" }
+        val recorded = RecordCorrectionUseCase(corrections, clock, ids).correct(
+            observation = observation.observation,
+            resolution = observation.resolution,
+            corrected = CorrectedIdentity.IsRelease(ReleaseId(releaseIdOf("Super Mario World (USA)"))),
+            reason = "I dumped this myself",
+        )
+        assertIs<Outcome.Success<*>>(recorded)
+
+        val corrected = resolutionsByName(scan().second).getValue("mystery.sfc")
+
+        assertEquals(ResolutionState.USER_CORRECTED, corrected.state)
+        assertEquals(IdentityBasis.USER_ASSERTED, corrected.identityBasis)
+        assertFalse(corrected.isVerified, "A correction is not content verification")
+        assertEquals("Super Mario World", corrected.selected?.record?.canonicalTitle)
+    }
+
+    @Test
+    fun `a corrected file is renamed to what the user said, not to what the hash said`() = runTest {
+        val bytes = payload(seed = 77)
+        writeTwoGameDat(bytes, payload(seed = 78))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val sessionId = scan().first
+        val observation = (observations.findBySession(sessionId) as Outcome.Success).value.single()
+        RecordCorrectionUseCase(corrections, clock, ids).correct(
+            observation = observation.observation,
+            resolution = observation.resolution,
+            corrected = CorrectedIdentity.IsRelease(ReleaseId(releaseIdOf("Super Mario World (USA)"))),
+        )
+
+        val rescanned = scan().first
+        val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+        val plan =
+            (GenerateRenamePlanUseCase(observations, clock, ids).generate(rescanned) as Outcome.Success).value
+        val result = ExecuteRenamePlanUseCase(validate, LocalRenameExecutor(), journal, clock, ids)
+            .execute(plan)
+
+        assertTrue((result as Outcome.Success).value.summary.isFullySuccessful, result.value.summary.toString())
+        assertEquals(
+            listOf("Super Mario World (USA).sfc"),
+            root.resolve("roms").listDirectoryEntries().map { it.name },
+        )
+    }
+
+    @Test
+    fun `withdrawing a correction restores automatic identification`() = runTest {
+        val bytes = payload(seed = 79)
+        writeTwoGameDat(bytes, payload(seed = 80))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val useCase = RecordCorrectionUseCase(corrections, clock, ids)
+        val observation = (observations.findBySession(scan().first) as Outcome.Success).value.single()
+        useCase.correct(
+            observation.observation,
+            observation.resolution,
+            CorrectedIdentity.IsRelease(ReleaseId(releaseIdOf("Super Mario World (USA)"))),
+        )
+        assertEquals(
+            ResolutionState.USER_CORRECTED,
+            resolutionsByName(scan().second).getValue("mystery.sfc").state,
+        )
+
+        assertIs<Outcome.Success<*>>(useCase.withdraw(observation.observation))
+
+        val restored = resolutionsByName(scan().second).getValue("mystery.sfc")
+        assertTrue(restored.state.isExact)
+        assertTrue(restored.isVerified)
+    }
+
+    @Test
+    fun `a rejection stops the file being renamed at all`() = runTest {
+        val bytes = payload(seed = 81)
+        writeTwoGameDat(bytes, payload(seed = 82))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val observation = (observations.findBySession(scan().first) as Outcome.Success).value.single()
+        RecordCorrectionUseCase(corrections, clock, ids).correct(
+            observation.observation,
+            observation.resolution,
+            CorrectedIdentity.NotThis,
+            reason = "this is my own build",
+        )
+
+        val sessionId = scan().first
+        val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+        val plan =
+            (GenerateRenamePlanUseCase(observations, clock, ids).generate(sessionId) as Outcome.Success).value
+        val preview = PreviewRenamePlanUseCase(validate).preview(plan)
+
+        assertEquals(PlanVerdict.NOTHING_TO_DO, preview.validation.verdict)
+        assertEquals(
+            listOf("mystery.sfc"),
+            root.resolve("roms").listDirectoryEntries().map { it.name },
+        )
+    }
+
+    @Test
+    fun `a correction history survives the dataset it was made against`() = runTest {
+        val bytes = payload(seed = 83)
+        writeTwoGameDat(bytes, payload(seed = 84))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val useCase = RecordCorrectionUseCase(corrections, clock, ids)
+        val observation = (observations.findBySession(scan().first) as Outcome.Success).value.single()
+        useCase.correct(observation.observation, observation.resolution, CorrectedIdentity.NotThis, "wrong")
+
+        database.execute("DELETE FROM dat_source")
+
+        val history = (useCase.history(observation.observation) as Outcome.Success).value
+        assertEquals(1, history.size)
+        assertEquals("wrong", history.single().reason)
+    }
+
+    private fun releaseIdOf(setName: String): String =
+        EntityPromoter.releaseId(
+            DumpRecord.derive(
+                id = DumpRecordId("probe"),
+                source = DatSourceRef(
+                    id = DatSourceId("no_intro:Test Console:1"),
+                    provider = "no_intro",
+                    setName = "Test Console",
+                    version = "1",
+                    platform = PlatformName("Test Console"),
+                    importedAtEpochMillis = 1,
+                ),
+                setName = setName,
+                romName = "$setName.sfc",
+                size = 1,
+                hashes = HashDigests.EMPTY,
+            ).canonicalIdentityKey,
+        ).value
+
+    private fun countOf(table: String): Int =
+        database.query("SELECT COUNT(*) FROM $table") { it.getInt(0) }.first()
 
     private class SimulatedCrash : RuntimeException("simulated crash after the filesystem call")
 }

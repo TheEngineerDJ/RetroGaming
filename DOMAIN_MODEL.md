@@ -872,3 +872,45 @@ This prevents ontology bloat while protecting important distinctions.
 `ResolutionState` gains `OUT_OF_CATALOGUE_SCOPE`, distinct from `NO_MATCH`. `NO_MATCH` means the datasets cover this medium and do not list this artifact; `OUT_OF_CATALOGUE_SCOPE` means they never had standing to say anything.
 
 `IdentityBasis` — `VERIFIED_CONTENT`, `STRUCTURAL`, `INFERRED`, `NONE` — is derived from the resolution state and answers "resting on what", where confidence answers "how sure". A state that may carry a selected identity always has a basis other than `NONE`, and a state that may not always has `NONE`.
+
+
+## The canonical entity model
+
+`Platform -> Work -> Release -> Artifact` (Constitution section 305), implemented in `com.retrovault.domain.entity`.
+
+- **Platform** is family-level (Constitution section 33). Hardware models and revisions are not modelled yet; when they are they hang below a platform rather than replacing it.
+- **Work** is the game concept (section 31). It carries no region, revision or platform: those distinguish releases *of* it.
+- **Release** is one published form. Its identity is exactly `CanonicalIdentityKey` — the key the resolver already groups records by. That is not a coincidence: the key is how a release is recognised, and the release is the entity it recognises.
+- **Artifact** is one digital image of a release (section 38). A disc preserved as `.cue` and as `.chd` is one release with two artifacts.
+
+Entities are *projections* of `DumpRecord`, not a second copy of it. A dump record is external evidence written by a dataset (section 145); an entity is RetroVault's reading of what that evidence describes. One record projects into one artifact, but records from several datasets project into the *same* release, which is the whole reason the distinction is needed.
+
+Identifiers are derived, not generated, so promoting the same identity twice produces the same entity. `dump_record.release_id` stores the projection key, which is what lets a correction name any catalogued release rather than only ones a scan happened to promote.
+
+### Deliberate under-merges
+
+`EntityPromoter` scopes a work to its platform, so the same title on SNES and on PSP is two works. Section 32 requires a port to be an explicit, evidenced relationship, so deriving one work automatically would be exactly the inference that section forbids. Two works joined later by a confirmed `PORT_OF` edge lose nothing; a wrong merge is expensive to undo.
+
+Likewise a platform is identified by name alone, so two datasets naming one console differently produce two platforms. Merging them is a canonical merge, which section 43 reserves for human or high-confidence evidence.
+
+### Relationships
+
+`RelationshipType` is a controlled, versioned vocabulary (Constitution section 40). Structural edges — `RELEASE_OF`, `RUNS_ON`, `IMAGE_OF` — are what make the graph a hierarchy and are derived automatically. Derivation edges — `PORT_OF`, `REMAKE_OF`, `REMASTER_OF`, `INCLUDED_IN` — are historical claims section 32 says must not be inferred from marketing language, so nothing derives one; they exist only as `CONFIRMED`.
+
+Section 40 lists many more relations. Each needs an entity type RetroVault does not yet have, and a relation whose other end cannot exist describes nothing, so they arrive with the entities they connect.
+
+### Provenance
+
+`EntityProvenance` is `DERIVED` or `CONFIRMED`. A derived write never overwrites a confirmed row — enforced in SQL, not in the caller, because a caller can forget. Section 43: automation proposes, people establish.
+
+## Durable user corrections
+
+`IdentityCorrection` implements Constitution section 69 and DOMAIN_MODEL invariant 13.
+
+**Scope is content, never filename or observation id.** A filename is representation, so a correction keyed on one would follow the wrong file the moment anything was renamed — including by RetroVault. An observation id is minted per scan, so a correction keyed on one would silently stop applying. Only a cryptographic hash is accepted: CRC32 is a discriminator rather than content proof (section 148), and 32 bits would eventually attach a user's assertion to bytes they never saw. A correction that cannot be made durable is refused rather than made.
+
+**Corrections outrank automatic identification, without claiming verification.** `USER_CORRECTED` carries the user's identity with `IdentityBasis.USER_ASSERTED`; the overruled candidate stays in the result with its evidence intact (section 44). `USER_REJECTED` selects nothing and is distinct from `NO_MATCH`: the catalogue did answer and a person rejected it.
+
+**History is append-only.** Superseding writes a new row and marks the old one, so "what did I say before, and why" stays answerable (section 70). Withdrawing marks a row withdrawn, which is a different fact from never having corrected.
+
+A corrected identity may be renamed without further confirmation: the correction *is* the per-file confirmation `REQUIRES_REVIEW` exists to obtain. A rejected one is never renamed.

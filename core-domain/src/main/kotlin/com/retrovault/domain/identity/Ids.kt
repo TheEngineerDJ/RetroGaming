@@ -67,6 +67,57 @@ value class PlanEntryId(val value: String) {
     }
 }
 
+/**
+ * Identifies one canonical entity in the knowledge graph.
+ *
+ * Constitution section 305 states the model as
+ * `Platform -> Work -> Release -> Artifact -> Observation -> Evidence -> Resolution`.
+ * The first four are canonical entities and each carries its own identifier
+ * type, so a function that takes a release cannot be handed a work.
+ *
+ * These identifiers are *derived* from the identity they describe rather than
+ * generated, so promoting the same identity twice produces the same entity
+ * instead of a duplicate. That is what makes a rescan idempotent.
+ */
+@JvmInline
+value class PlatformId(val value: String) {
+    init {
+        require(value.isNotBlank()) { "PlatformId must not be blank" }
+    }
+}
+
+/** Identifies one game concept - the underlying work (Constitution section 31). */
+@JvmInline
+value class WorkId(val value: String) {
+    init {
+        require(value.isNotBlank()) { "WorkId must not be blank" }
+    }
+}
+
+/** Identifies one specific published form of a work (Constitution section 31). */
+@JvmInline
+value class ReleaseId(val value: String) {
+    init {
+        require(value.isNotBlank()) { "ReleaseId must not be blank" }
+    }
+}
+
+/** Identifies one digital image of a release (Constitution section 38). */
+@JvmInline
+value class ArtifactId(val value: String) {
+    init {
+        require(value.isNotBlank()) { "ArtifactId must not be blank" }
+    }
+}
+
+/** Identifies one durable user correction (Constitution section 69). */
+@JvmInline
+value class CorrectionId(val value: String) {
+    init {
+        require(value.isNotBlank()) { "CorrectionId must not be blank" }
+    }
+}
+
 /** Logical platform label carried by a DAT header, e.g. "Nintendo - Super Nintendo Entertainment System". */
 @JvmInline
 value class PlatformName(val value: String) {

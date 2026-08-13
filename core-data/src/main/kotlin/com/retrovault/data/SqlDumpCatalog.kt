@@ -8,6 +8,7 @@ import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.catalog.DatSourceRef
 import com.retrovault.domain.catalog.DatasetCoverage
 import com.retrovault.domain.catalog.DumpRecord
+import com.retrovault.domain.entity.EntityPromoter
 import com.retrovault.domain.identity.DatSourceId
 import com.retrovault.domain.identity.DatasetKind
 import com.retrovault.domain.identity.HashDigests
@@ -174,8 +175,8 @@ class SqlDumpCatalog(
         database.execute(
             "INSERT OR REPLACE INTO dump_record (id, source_id, set_name, rom_name, size, platform, " +
                 "canonical_title, normalized_title, revision, version, disc_number, status, external_id, " +
-                "regions, languages, flags, matchable, media_type) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "regions, languages, flags, matchable, media_type, release_id) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             listOf(
                 record.id.value,
                 sourceId.value,
@@ -195,6 +196,10 @@ class SqlDumpCatalog(
                 RecordMapper.encodeList(record.flags.map { it.name }.sorted()),
                 if (record.isMatchable) 1L else 0L,
                 record.mediaType.name,
+                // The release this record projects into. Derived here so a
+                // correction can name any catalogued release, not only one a
+                // scan happened to promote into the entity graph.
+                EntityPromoter.releaseId(record.canonicalIdentityKey).value,
             ),
         )
         record.hashes.asList().forEach { hash ->

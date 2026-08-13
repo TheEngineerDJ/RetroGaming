@@ -1103,6 +1103,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
             candidates = candidates,
             pipelineEvidence = session.pipelineEvidence + session.strictContradictions + pipelineEvidence,
             hashesComputed = session.computed,
+            hashes = session.hashes,
             consultedSources = session.consultedSources,
             selected = selected,
             resolverVersion = VERSION,

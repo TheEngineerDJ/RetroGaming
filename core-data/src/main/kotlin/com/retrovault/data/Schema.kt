@@ -1,5 +1,6 @@
 package com.retrovault.data
 
+import com.retrovault.domain.entity.EntityPromoter
 import com.retrovault.domain.identity.MediaTypeVocabulary
 
 /**
@@ -15,7 +16,7 @@ import com.retrovault.domain.identity.MediaTypeVocabulary
  */
 object Schema {
 
-    const val CURRENT_VERSION: Int = 3
+    const val CURRENT_VERSION: Int = 4
 
     /**
      * Applies every migration needed to bring [database] up to date.
@@ -31,6 +32,19 @@ object Schema {
      * actually have, rather than only ever from an empty database. A migration
      * that is only exercised on a fresh install is a migration nobody has run.
      */
+    /**
+     * One schema version.
+     *
+     * [statements] is the DDL; [afterStatements] is for the rare change whose
+     * data cannot be derived in SQL. DATABASE.md section 15 requires migration
+     * code to be deterministic, not to be SQL - and reproducing a Kotlin
+     * derivation in SQL is how the two drift apart.
+     */
+    private class Migration(
+        val statements: List<String>,
+        val afterStatements: (SqlDatabase) -> Unit = {},
+    )
+
     internal fun migrateTo(database: SqlDatabase, targetVersion: Int): Int = database.transaction {
         // Foreign-key enforcement is switched on by each binding when it opens
         // the connection, not here. `PRAGMA foreign_keys` is a no-op inside a
@@ -47,8 +61,9 @@ object Schema {
         migrations
             .filterKeys { it > current && it <= targetVersion }
             .toSortedMap()
-            .forEach { (version, statements) ->
-                statements.forEach(database::execute)
+            .forEach { (version, migration) ->
+                migration.statements.forEach(database::execute)
+                migration.afterStatements(database)
                 database.execute(
                     "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
                     listOf(version.toLong(), System.currentTimeMillis()),
@@ -62,8 +77,53 @@ object Schema {
             .query("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1") { it.getInt(0) }
             .firstOrNull() ?: 0
 
-    private val migrations: Map<Int, List<String>> =
-        mapOf(1 to version1(), 2 to version2(), 3 to version3())
+    private val migrations: Map<Int, Migration> = mapOf(
+        1 to Migration(version1()),
+        2 to Migration(version2()),
+        3 to Migration(version3()),
+        4 to Migration(version4(), ::backfillReleaseIds),
+    )
+
+    /**
+     * Fills in the release each catalogued record projects into.
+     *
+     * The release identifier is derived from a normalized title, a sorted
+     * region list and a sorted flag list. Reproducing that ordering in SQL
+     * would be a second implementation of the same rule, free to drift from the
+     * first - which is exactly the fault the media backfill was written to
+     * avoid. So the records are read back through the same mapper the
+     * application uses and the same promoter, and written out again.
+     *
+     * Bounded by chunking: a catalogue can hold hundreds of thousands of
+     * records, and holding them all in memory during an upgrade is not
+     * acceptable on a phone.
+     */
+    private fun backfillReleaseIds(database: SqlDatabase) {
+        var offset = 0
+        while (true) {
+            val batch = database.query(
+                RELEASE_BACKFILL_SELECT + " LIMIT $BACKFILL_BATCH OFFSET $offset",
+            ) { row -> RecordMapper.map(row) }
+            if (batch.isEmpty()) return
+            batch.forEach { record ->
+                database.execute(
+                    "UPDATE dump_record SET release_id = ? WHERE id = ?",
+                    listOf(EntityPromoter.releaseId(record.canonicalIdentityKey).value, record.id.value),
+                )
+            }
+            offset += batch.size
+        }
+    }
+
+    private const val BACKFILL_BATCH = 500
+
+    private val RELEASE_BACKFILL_SELECT =
+        "SELECT r.id, r.set_name, r.rom_name, r.size, r.platform, r.canonical_title, " +
+            "r.normalized_title, r.revision, r.version, r.disc_number, r.status, r.external_id, " +
+            "r.regions, r.languages, r.flags, " +
+            "s.id, s.provider, s.set_name, s.version, s.platform, s.imported_at, s.source_digest, " +
+            "r.media_type, s.kind " +
+            "FROM dump_record r JOIN dat_source s ON s.id = r.source_id ORDER BY r.id"
 
     private fun version1(): List<String> = listOf(
         // --- Imported datasets -------------------------------------------
@@ -417,6 +477,132 @@ object Schema {
         // user can actually fix.
         add("ALTER TABLE scan_session ADD COLUMN out_of_scope INTEGER NOT NULL DEFAULT 0")
     }
+
+    /**
+     * The canonical entity graph and durable user corrections.
+     *
+     * Constitution section 305 states the model as
+     * `Platform -> Work -> Release -> Artifact`. Until now the schema held only
+     * external evidence - `dat_source` and `dump_record` - and the entities that
+     * evidence *describes* existed nowhere, so nothing a user decided could
+     * outlive the scan that produced it.
+     *
+     * Entity rows are projections, not a second catalogue. They carry no hashes
+     * a `dump_record` does not already have; what they add is the identity those
+     * records agree on, which is the thing a correction, a relationship or a
+     * collection can be attached to.
+     *
+     * `identity_correction` is append-only. Section 69 forbids silently
+     * rewriting history and section 70 requires earlier knowledge to stay
+     * reconstructable, so superseding a correction inserts a row and marks the
+     * old one rather than updating it in place.
+     */
+    private fun version4(): List<String> = listOf(
+        """
+        CREATE TABLE platform_entity (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            provenance TEXT NOT NULL DEFAULT 'DERIVED',
+            aliases TEXT NOT NULL DEFAULT ''
+        )
+        """.trimIndent(),
+
+        """
+        CREATE TABLE work_entity (
+            id TEXT PRIMARY KEY NOT NULL,
+            canonical_title TEXT NOT NULL,
+            normalized_title TEXT NOT NULL,
+            provenance TEXT NOT NULL DEFAULT 'DERIVED',
+            aliases TEXT NOT NULL DEFAULT ''
+        )
+        """.trimIndent(),
+
+        """
+        CREATE TABLE release_entity (
+            id TEXT PRIMARY KEY NOT NULL,
+            work_id TEXT NOT NULL REFERENCES work_entity(id) ON DELETE CASCADE,
+            platform_id TEXT NOT NULL REFERENCES platform_entity(id) ON DELETE CASCADE,
+            regions TEXT NOT NULL DEFAULT '',
+            languages TEXT NOT NULL DEFAULT '',
+            revision TEXT,
+            version TEXT,
+            disc_number INTEGER,
+            flags TEXT NOT NULL DEFAULT '',
+            provenance TEXT NOT NULL DEFAULT 'DERIVED',
+            aliases TEXT NOT NULL DEFAULT ''
+        )
+        """.trimIndent(),
+
+        """
+        CREATE TABLE artifact_entity (
+            id TEXT PRIMARY KEY NOT NULL,
+            release_id TEXT NOT NULL REFERENCES release_entity(id) ON DELETE CASCADE,
+            media_type TEXT NOT NULL DEFAULT 'UNKNOWN',
+            size INTEGER,
+            provenance TEXT NOT NULL DEFAULT 'DERIVED',
+            aliases TEXT NOT NULL DEFAULT ''
+        )
+        """.trimIndent(),
+
+        // Artifact hashes are normalized for the same reason dump_hash is: a
+        // future algorithm must not need a schema redesign
+        // (DATABASE.md section 9).
+        """
+        CREATE TABLE artifact_hash (
+            artifact_id TEXT NOT NULL REFERENCES artifact_entity(id) ON DELETE CASCADE,
+            algorithm TEXT NOT NULL,
+            digest TEXT NOT NULL,
+            PRIMARY KEY (artifact_id, algorithm)
+        )
+        """.trimIndent(),
+
+        // The edge is its endpoints and its type, so that is the key. Asserting
+        // the same relationship twice is not two facts.
+        """
+        CREATE TABLE entity_relationship (
+            from_kind TEXT NOT NULL,
+            from_id TEXT NOT NULL,
+            type TEXT NOT NULL,
+            to_kind TEXT NOT NULL,
+            to_id TEXT NOT NULL,
+            provenance TEXT NOT NULL DEFAULT 'DERIVED',
+            note TEXT,
+            PRIMARY KEY (from_kind, from_id, type, to_kind, to_id)
+        )
+        """.trimIndent(),
+
+        // Keyed by content, never by filename or observation id: a correction
+        // has to find its file after a rename and after the next scan.
+        """
+        CREATE TABLE identity_correction (
+            id TEXT PRIMARY KEY NOT NULL,
+            scope_algorithm TEXT NOT NULL,
+            scope_digest TEXT NOT NULL,
+            scope_size INTEGER,
+            previous_identity TEXT,
+            corrected_kind TEXT NOT NULL,
+            corrected_release_id TEXT,
+            reason TEXT,
+            recorded_at INTEGER NOT NULL,
+            state TEXT NOT NULL,
+            superseded_by TEXT
+        )
+        """.trimIndent(),
+
+        "CREATE INDEX idx_release_work ON release_entity(work_id)",
+        "CREATE INDEX idx_artifact_release ON artifact_entity(release_id)",
+        "CREATE INDEX idx_artifact_hash_lookup ON artifact_hash(algorithm, digest)",
+        "CREATE INDEX idx_relationship_from ON entity_relationship(from_kind, from_id)",
+        "CREATE INDEX idx_relationship_to ON entity_relationship(to_kind, to_id)",
+        "CREATE INDEX idx_correction_scope ON identity_correction(scope_algorithm, scope_digest, state)",
+
+        // The release each record projects into, stored so a correction can
+        // name any catalogued release rather than only ones a scan happened to
+        // promote. Derived data: it can be recomputed from the record at any
+        // time (DATABASE.md section 12).
+        "ALTER TABLE dump_record ADD COLUMN release_id TEXT",
+        "CREATE INDEX idx_dump_record_release ON dump_record(release_id)",
+    )
 }
 
 /**

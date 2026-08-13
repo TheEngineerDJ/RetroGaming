@@ -5,6 +5,7 @@ import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.evidence.Evidence
 import com.retrovault.domain.identity.DatSourceId
 import com.retrovault.domain.identity.HashAlgorithm
+import com.retrovault.domain.identity.HashDigests
 import com.retrovault.domain.identity.ObservationId
 
 /**
@@ -25,6 +26,17 @@ enum class IdentityBasis {
 
     /** Identity read from the filename or metadata. The bytes were not verified. */
     INFERRED,
+
+    /**
+     * A person told RetroVault what this is.
+     *
+     * Deliberately not folded into [VERIFIED_CONTENT]. The user is the highest
+     * authority over their own collection, and their assertion is still not a
+     * statement about the bytes - nothing checked the content against the
+     * release they named. Presenting the two alike would let a typo read as a
+     * hash match.
+     */
+    USER_ASSERTED,
 
     /** No identity was established. */
     NONE,
@@ -85,6 +97,27 @@ enum class ResolutionState {
      */
     OUT_OF_CATALOGUE_SCOPE,
 
+    /**
+     * The user told RetroVault what this is.
+     *
+     * DOMAIN_MODEL.md section 37 invariant 13: user corrections outrank
+     * automatic suggestions for that user's collection. This state is what that
+     * outranking looks like - it carries the user's identity, not the
+     * catalogue's, and the automatic candidates stay in the result with their
+     * evidence intact so the disagreement is visible rather than erased
+     * (Constitution section 44).
+     */
+    USER_CORRECTED,
+
+    /**
+     * The user said RetroVault's answer is wrong and offered no replacement.
+     *
+     * Distinct from [NO_MATCH]: the catalogue did produce an answer and a
+     * person rejected it. Recording that as "no match" would lose the
+     * rejection, and the next scan would propose the same wrong identity again.
+     */
+    USER_REJECTED,
+
     /** Strong evidence contradicts an otherwise promising candidate. */
     CONFLICT,
 
@@ -108,7 +141,14 @@ enum class ResolutionState {
             EXACT_HASH, EXACT_MULTI_HASH -> IdentityBasis.VERIFIED_CONTENT
             STRUCTURAL_MATCH -> IdentityBasis.STRUCTURAL
             STRONG_METADATA_MATCH, FUZZY_MATCH -> IdentityBasis.INFERRED
-            AMBIGUOUS, NO_MATCH, OUT_OF_CATALOGUE_SCOPE, CONFLICT, UNSUPPORTED -> IdentityBasis.NONE
+            USER_CORRECTED -> IdentityBasis.USER_ASSERTED
+            AMBIGUOUS,
+            NO_MATCH,
+            OUT_OF_CATALOGUE_SCOPE,
+            USER_REJECTED,
+            CONFLICT,
+            UNSUPPORTED,
+            -> IdentityBasis.NONE
         }
 
     /** Whether this state is allowed to carry a selected identity. */
@@ -119,6 +159,7 @@ enum class ResolutionState {
             STRUCTURAL_MATCH,
             STRONG_METADATA_MATCH,
             FUZZY_MATCH,
+            USER_CORRECTED,
         )
 }
 
@@ -142,6 +183,11 @@ enum class ConfidenceLevel {
             ResolutionState.STRUCTURAL_MATCH -> STRONG
             ResolutionState.STRONG_METADATA_MATCH, ResolutionState.FUZZY_MATCH -> PROBABLE
             ResolutionState.AMBIGUOUS, ResolutionState.CONFLICT -> AMBIGUOUS
+            // The user is the strongest authority available for their own
+            // collection, so their assertion is not hedged. What it rests on is
+            // carried separately, by IdentityBasis.USER_ASSERTED.
+            ResolutionState.USER_CORRECTED -> STRONG
+            ResolutionState.USER_REJECTED,
             ResolutionState.NO_MATCH,
             ResolutionState.OUT_OF_CATALOGUE_SCOPE,
             ResolutionState.UNSUPPORTED,
@@ -197,6 +243,16 @@ data class ArtifactResolution(
     /** Evidence about the pipeline itself rather than about one candidate. */
     val pipelineEvidence: List<Evidence>,
     val hashesComputed: Set<HashAlgorithm>,
+    /**
+     * The digests the pipeline ended up holding for the identity-bearing bytes.
+     *
+     * [hashesComputed] names which algorithms ran; this carries what they
+     * produced. Without it the digests exist only inside the resolver session
+     * and vanish when it ends, which loses the evidence TRACEABILITY.md requires
+     * to survive into the audit record - and leaves nothing durable for a user
+     * correction to be keyed on.
+     */
+    val hashes: HashDigests = HashDigests.EMPTY,
     val consultedSources: List<DatSourceId>,
     val resolverVersion: String,
     val tokenizerVersion: String,
@@ -228,6 +284,7 @@ data class ArtifactResolution(
             candidates: List<Candidate> = emptyList(),
             pipelineEvidence: List<Evidence> = emptyList(),
             hashesComputed: Set<HashAlgorithm> = emptySet(),
+            hashes: HashDigests = HashDigests.EMPTY,
             consultedSources: List<DatSourceId> = emptyList(),
             selected: Candidate? = null,
             resolverVersion: String,
@@ -241,6 +298,7 @@ data class ArtifactResolution(
             candidates = candidates,
             pipelineEvidence = pipelineEvidence,
             hashesComputed = hashesComputed,
+            hashes = hashes,
             consultedSources = consultedSources,
             resolverVersion = resolverVersion,
             tokenizerVersion = tokenizerVersion,

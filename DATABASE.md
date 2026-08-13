@@ -355,3 +355,14 @@ Rebuilding a parent table under enforced foreign keys is destructive: `DROP TABL
 ## Reading failures are not absences
 
 `ArtifactState.readable` and `ReconciliationEvidence.storageReadable` record whether storage answered at all. Both default to true and neither changes a safety decision - an unreadable file blocks its batch either way. They exist because the verdicts built on them read an absence as evidence, and an absence that was never observed is not evidence. Without them, a lapsed permission was recorded as "the file no longer exists" and, during reconciliation, as "the rename never happened".
+
+
+## Schema version 4 — entities and corrections
+
+`platform_entity`, `work_entity`, `release_entity`, `artifact_entity` and `artifact_hash` hold the canonical entity graph; `entity_relationship` holds typed edges; `identity_correction` holds durable user corrections.
+
+Entity writes are idempotent because identifiers are derived from the identity they describe. Each upsert carries `WHERE <table>.provenance = 'DERIVED'`, so an automatic pass can refresh what it proposed and can never overwrite what a person confirmed.
+
+`identity_correction` is append-only. Superseding updates the previous row's state and inserts a new one; withdrawing marks a row rather than deleting it. A correction has no foreign key to `dat_source` or `dump_record` on purpose — it is the user's, and removing a dataset must not remove their decision.
+
+`dump_record.release_id` stores the release each record projects into. It is backfilled by a Kotlin migration step rather than in SQL: the key derives from a normalized title and sorted region and flag lists, and reproducing that ordering in SQL would be a second implementation free to drift from the first. `Schema.Migration.afterStatements` exists for exactly this case — DATABASE.md section 15 requires migration code to be deterministic, not to be SQL. The backfill reads in bounded batches so an upgrade does not hold a large catalogue in memory.

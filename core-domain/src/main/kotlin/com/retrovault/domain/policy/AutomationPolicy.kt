@@ -80,10 +80,17 @@ data class AutomationPolicy(
             ResolutionState.FUZZY_MATCH,
             -> AutomationDecision.REQUIRES_REVIEW
 
+            // A correction *is* the per-file confirmation that REQUIRES_REVIEW
+            // exists to obtain, made deliberately by the user against these
+            // exact bytes. Asking them to confirm it a second time would treat
+            // their decision as a suggestion.
+            ResolutionState.USER_CORRECTED -> AutomationDecision.AUTOMATIC
+
             ResolutionState.AMBIGUOUS,
             ResolutionState.CONFLICT,
             ResolutionState.NO_MATCH,
             ResolutionState.OUT_OF_CATALOGUE_SCOPE,
+            ResolutionState.USER_REJECTED,
             ResolutionState.UNSUPPORTED,
             -> AutomationDecision.FORBIDDEN
         }

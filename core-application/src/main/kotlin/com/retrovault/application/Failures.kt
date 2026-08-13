@@ -68,6 +68,19 @@ sealed interface RetroVaultFailure {
                 "No files have been changed."
     }
 
+    /**
+     * A correction could not be recorded.
+     *
+     * Typed rather than generic because the only refusal today is one the user
+     * can act on: hash the file first (ENGINEERING_SPEC.md section 8).
+     */
+    data class CorrectionRefused(
+        val refusal: CorrectionRefusal,
+        override val message: String,
+    ) : RetroVaultFailure {
+        override val code: String get() = "correction_refused_${refusal.name.lowercase()}"
+    }
+
     data class PersistenceFailure(val detail: String) : RetroVaultFailure {
         override val code: String get() = "persistence_failure"
         override val message: String get() = "Local data could not be saved: $detail"

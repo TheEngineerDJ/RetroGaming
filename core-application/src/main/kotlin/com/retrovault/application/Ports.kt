@@ -2,6 +2,14 @@ package com.retrovault.application
 
 import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.catalog.DatSourceRef
+import com.retrovault.domain.correction.CorrectionScope
+import com.retrovault.domain.correction.CorrectionSet
+import com.retrovault.domain.correction.IdentityCorrection
+import com.retrovault.domain.entity.EntityRef
+import com.retrovault.domain.entity.EntityRelationship
+import com.retrovault.domain.entity.PromotedIdentity
+import com.retrovault.domain.entity.Release
+import com.retrovault.domain.identity.ReleaseId
 import com.retrovault.domain.catalog.DumpRecord
 import com.retrovault.domain.identity.DatSourceId
 import com.retrovault.domain.identity.HashAlgorithm
@@ -126,6 +134,59 @@ interface DumpCatalog {
      * (Constitution section 174).
      */
     suspend fun coverage(): CatalogueCoverage
+}
+
+/**
+ * The canonical entity graph.
+ *
+ * Entities are *projected* from catalogue evidence rather than being a second
+ * copy of it (Constitution section 145), so writing is idempotent by
+ * construction: promoting the same identity twice produces the same rows.
+ *
+ * Contract:
+ * - [save] never downgrades an entity a user confirmed to a derived one
+ *   (Constitution section 43: automation proposes, people establish).
+ * - [recordsForRelease] returns the catalogue records that describe a release,
+ *   which is how a correction naming a release becomes an identity again.
+ */
+interface EntityGraph {
+    suspend fun save(identity: PromotedIdentity): Outcome<Unit>
+
+    suspend fun findRelease(id: ReleaseId): Outcome<Release?>
+
+    suspend fun recordsForRelease(id: ReleaseId): List<DumpRecord>
+
+    suspend fun relationshipsFrom(ref: EntityRef): Outcome<List<EntityRelationship>>
+
+    /** Asserts an edge the user established, e.g. a port or remake (section 32). */
+    suspend fun relate(relationship: EntityRelationship): Outcome<Unit>
+}
+
+/**
+ * Durable user corrections.
+ *
+ * Append-only. Superseding a correction writes a new row and marks the old one
+ * superseded, because Constitution section 69 forbids silently rewriting
+ * history and section 70 requires earlier knowledge to stay reconstructable.
+ */
+interface CorrectionStore {
+    /** Records a correction, superseding any active one for the same content. */
+    suspend fun record(correction: IdentityCorrection): Outcome<IdentityCorrection>
+
+    /** Marks the active correction for this content withdrawn. */
+    suspend fun withdraw(scope: CorrectionScope): Outcome<Unit>
+
+    /** Every correction ever made for this content, newest first. */
+    suspend fun history(scope: CorrectionScope): Outcome<List<IdentityCorrection>>
+
+    /**
+     * Every active correction, for a scan to apply.
+     *
+     * Read once per scan. Corrections are authored by hand, so the set is small
+     * enough to hold; a library with more corrections than files has bigger
+     * problems than memory.
+     */
+    suspend fun active(): CorrectionSet
 }
 
 /** Writing an imported dataset. */
