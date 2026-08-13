@@ -66,6 +66,11 @@ class SchemaMigrationTest {
         assertEquals(3, countOf("dump_record"))
         assertEquals(3, countOf("dump_hash"), "Rebuilding dump_record must not cascade into the hashes")
         assertEquals(3, countOf("dump_title_token"))
+        assertEquals(
+            listOf("CARTRIDGE", "CARTRIDGE", "CARTRIDGE"),
+            database.query("SELECT media_type FROM dump_record ORDER BY id") { it.getString(0) },
+            "A version 1 database must reach version 3 with its media backfilled, not left UNKNOWN",
+        )
     }
 
     @Test

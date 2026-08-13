@@ -71,6 +71,11 @@ class ScanLocationUseCaseTest {
         }
     }
 
+    /** A catalogue whose coverage query fails, to prove a scan survives it. */
+    private class CoverageFailingCatalog(records: List<DumpRecord>) : DumpCatalog by FakeCatalog(records) {
+        override suspend fun coverage(): CatalogueCoverage = throw IllegalStateException("database is busy")
+    }
+
     private class FakeCatalog(private val records: List<DumpRecord>) : DumpCatalog {
         override suspend fun findBySize(size: Long) =
             records.filter { it.size == null || it.size == size }
@@ -183,6 +188,29 @@ class ScanLocationUseCaseTest {
         override suspend fun find(id: ScanSessionId): Outcome<ScanSessionRecord> =
             started?.let { Outcome.success(it) }
                 ?: Outcome.failure(RetroVaultFailure.PersistenceFailure("none"))
+    }
+
+
+    @Test
+    fun `a catalogue that cannot report coverage does not fail the scan`() = runTest {
+        // Coverage only adds a distinction between two ways of finding nothing.
+        // Losing it must cost the user that distinction, never their scan.
+        val walker = FakeWalker(listOf(WalkEvent.FileFound(file("game.sfc", size = 4096))))
+        val events = useCase(
+            walker,
+            CountingContentSource(),
+            CoverageFailingCatalog(emptyList()),
+            RecordingObservations(),
+            RecordingSessions(),
+        ).scan(location).toList()
+
+        val resolved = events.filterIsInstance<ScanEvent.FileResolved>().single()
+        assertEquals(
+            ResolutionState.NO_MATCH,
+            resolved.resolved.resolution.state,
+            "Unmeasured coverage must fall back to plain absence, not to a scope claim",
+        )
+        assertTrue(events.any { it is ScanEvent.SessionFinished })
     }
 
     private fun useCase(

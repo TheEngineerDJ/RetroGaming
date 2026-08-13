@@ -4,6 +4,7 @@ import com.retrovault.domain.Fixtures
 import com.retrovault.domain.identity.MediaType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -119,5 +120,42 @@ class CatalogueCoverageTest {
         val failure = runCatching { DatasetCoverage(Fixtures.source(), emptySet(), -1) }
 
         assertTrue(failure.isFailure)
+    }
+
+    @Test
+    fun `a dataset holding any unrecognised record may cover anything`() {
+        // A dataset of `.sfc` and `.bin` entries must not declare a `.iso` out
+        // of scope on the strength of extensions RetroVault never understood.
+        val mixed = dataset(MediaType.CARTRIDGE, MediaType.UNKNOWN)
+
+        assertTrue(mixed.covers(MediaType.OPTICAL_DISC))
+        assertEquals(CoverageAssessment.Covered, DatasetCompatibility.assess(MediaType.OPTICAL_DISC, coverage(mixed)))
+    }
+
+    @Test
+    fun `only a wholly recognised catalogue can put a file out of scope`() {
+        val recognised = coverage(dataset(MediaType.CARTRIDGE), dataset(MediaType.FLOPPY_DISK))
+
+        assertTrue(DatasetCompatibility.assess(MediaType.OPTICAL_DISC, recognised).isOutOfScope)
+
+        val withUnknown = coverage(
+            dataset(MediaType.CARTRIDGE),
+            dataset(MediaType.FLOPPY_DISK, MediaType.UNKNOWN),
+        )
+        assertFalse(DatasetCompatibility.assess(MediaType.OPTICAL_DISC, withUnknown).isOutOfScope)
+    }
+
+    @Test
+    fun `a dataset with nothing searchable in it makes no claim either way`() {
+        // Its records are all nodump placeholders, so it indexes nothing. That
+        // is not grounds to assert what it does *not* cover, so the artifact
+        // gets the humbler answer - "not listed" - rather than advice to import
+        // a dataset that is already imported.
+        val indexesNothing = DatasetCoverage(Fixtures.source(), emptySet(), recordCount = 0)
+
+        assertEquals(
+            CoverageAssessment.Covered,
+            DatasetCompatibility.assess(MediaType.OPTICAL_DISC, coverage(indexesNothing)),
+        )
     }
 }

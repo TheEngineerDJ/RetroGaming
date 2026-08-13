@@ -2,7 +2,7 @@
 
 **Project:** RetroVault
 **Role:** Strategic sequencing
-**Authority:** `Constitution.md`
+**Authority:** `CONSTITUTION.md`
 
 ## 1. Roadmap rule
 

@@ -161,6 +161,8 @@ The following must be covered, and are:
 **Dataset provenance**
 - Redump, No-Intro, TOSEC and MAME inferred from what the DAT states.
 - An unrecognised dataset is `UNKNOWN`, never misattributed.
+- Provenance matching is whole-word: `Gamemaster` is not MAME.
+- Provenance is read from the description as well as the header name.
 
 **Coverage assessment**
 - Disc image against a cartridge-only catalogue is out of scope, naming both media.
@@ -169,7 +171,10 @@ The following must be covered, and are:
 - An empty catalogue reports "nothing imported", not "no match".
 - Unmeasured coverage makes no claim.
 - A file of unknown medium is never declared out of scope.
-- A dataset of unrecognised media covers everything.
+- A dataset holding any record of unrecognised medium covers everything.
+- A dataset that indexes nothing searchable makes no claim either way.
+- Only a wholly recognised catalogue can put an artifact out of scope.
+- A catalogue that cannot report coverage degrades to unmeasured instead of failing the scan.
 - Uncommitted and unmatchable records contribute no coverage.
 
 **PSP end-to-end**
@@ -189,3 +194,13 @@ The following must be covered, and are:
 - A cartridge record never outranks a disc record for a disc image, and carries a visible reason for losing.
 - A medium disagreement weakens without excluding.
 - A disc preserved in another form (`.chd` against a catalogued `.cue`) registers no disagreement at all.
+
+## Specification integrity
+
+The source cites constitutional sections by number, so those citations are checked:
+
+- Exactly one constitution file exists. A second differing only in filename case cannot coexist on a case-insensitive filesystem, and the two would number their sections independently.
+- Every `Constitution section N` cited anywhere in the source resolves to a section heading.
+- No two sections share a label. A letter suffix is part of the label, so `166` and `166A` are distinct.
+- Part I keeps the body numbering (0-288) and Part II is offset (301-341), with 289-299 left empty as the gap between them.
+- No source file contains a control character. A stray NUL makes a file read as binary to grep, diff and review tooling.

@@ -4,7 +4,7 @@
 
 ## Authority chain
 
-`Constitution.md`
+`CONSTITUTION.md`
 → `ARCHITECTURE.md`
 → `DOMAIN_MODEL.md`
 → `ROM_INTELLIGENCE.md`

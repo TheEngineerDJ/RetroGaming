@@ -2,7 +2,7 @@
 
 ## Status
 
-Derived from `Constitution.md`.
+Derived from `CONSTITUTION.md`.
 
 This document defines the canonical conceptual model used by RetroVault. It is intentionally implementation-neutral. Database tables, Kotlin classes, API payloads, and UI models derive from these concepts.
 
@@ -867,7 +867,7 @@ This prevents ontology bloat while protecting important distinctions.
 
 `DatasetCoverage` is what one dataset actually indexes, measured from the media types of its matchable records. `CatalogueCoverage` aggregates them; `CatalogueCoverage.UNMEASURED` means a caller did not look, and is not the same as "nothing is covered".
 
-`DatasetCompatibility.assess` is a pure function returning `Covered`, `NoDatasets` or `MediaNotCovered`. Every uncertain input resolves to `Covered`.
+`DatasetCompatibility.assess` is a pure function returning `Covered`, `NoDatasets` or `MediaNotCovered`. Every uncertain input resolves to `Covered`: unmeasured coverage, an unknown observed medium, a dataset holding any record of unrecognised medium, and a dataset that indexes nothing all read as covered. Only a catalogue whose every indexed medium is recognised, and does not include the observed one, can put an artifact out of scope.
 
 `ResolutionState` gains `OUT_OF_CATALOGUE_SCOPE`, distinct from `NO_MATCH`. `NO_MATCH` means the datasets cover this medium and do not list this artifact; `OUT_OF_CATALOGUE_SCOPE` means they never had standing to say anything.
 

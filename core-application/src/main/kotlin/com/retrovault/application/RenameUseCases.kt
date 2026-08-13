@@ -117,7 +117,7 @@ data class RenamePreviewRow(
      * Carried separately from [confidence] because they answer different
      * questions: confidence is how sure RetroVault is, basis is what that
      * certainty rests on. A user deciding whether to accept a rename needs
-     * both (Constitution section 6).
+     * both (Constitution section 306).
      */
     val identityBasis: String,
     val verified: Boolean,

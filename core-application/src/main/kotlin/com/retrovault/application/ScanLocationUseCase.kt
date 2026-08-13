@@ -8,6 +8,7 @@ import com.retrovault.domain.observation.FileObservation
 import com.retrovault.domain.resolution.ArtifactResolver
 import com.retrovault.domain.resolution.ConfidenceLevel
 import com.retrovault.domain.resolution.ResolutionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ProducerScope
@@ -106,7 +107,19 @@ class ScanLocationUseCase(
         // datasets, identical for every file, and it is what lets an unmatched
         // artifact be reported as uncatalogued rather than unidentifiable
         // (Constitution section 174).
-        val coverage = catalog.coverage()
+        //
+        // A catalogue that cannot answer degrades to unmeasured rather than
+        // failing the scan. Coverage only ever adds a distinction between two
+        // ways of finding nothing; losing it must not cost the user their scan,
+        // and claiming a scope judgement RetroVault could not make would be
+        // worse than making none.
+        val coverage = try {
+            catalog.coverage()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            CatalogueCoverage.UNMEASURED
+        }
 
         val tally = Tally()
         val buffer = PersistBuffer(observations, config.persistBatchSize)

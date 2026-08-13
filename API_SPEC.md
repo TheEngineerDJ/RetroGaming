@@ -2,7 +2,7 @@
 
 **Project:** RetroVault
 **Role:** Future API and interoperability contract
-**Authority:** `Constitution.md`
+**Authority:** `CONSTITUTION.md`
 
 ## 1. Purpose
 

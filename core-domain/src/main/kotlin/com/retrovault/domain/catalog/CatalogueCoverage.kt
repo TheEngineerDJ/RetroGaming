@@ -21,18 +21,25 @@ data class DatasetCoverage(
     }
 
     /**
-     * Whether this dataset says anything about [media].
+     * Whether this dataset might say something about [media].
      *
-     * A dataset whose records are all of unknown medium is treated as covering
-     * everything. Refusing to consult it would turn RetroVault's own failure to
-     * recognise an extension into a refusal to look, which is the opposite of
-     * the intended effect.
+     * Answers "might", not "does", and every uncertainty resolves to `true`.
+     * The only thing this is used for is deciding whether to stop before
+     * reading a file, so a false `true` costs a wasted lookup while a false
+     * `false` suppresses a real match.
+     *
+     * A dataset containing *any* record of unrecognised medium may cover
+     * anything: RetroVault's failure to classify an extension is not evidence
+     * that the dataset excludes that medium. Requiring every record to be
+     * unrecognised before granting that benefit - as an earlier version did -
+     * would let a dataset of `.sfc` and `.bin` entries declare a `.iso` out of
+     * scope, on the strength of extensions it never understood.
      */
     fun covers(media: MediaType): Boolean = when {
         mediaTypes.isEmpty() -> true
         media == MediaType.UNKNOWN -> true
         media in mediaTypes -> true
-        mediaTypes == setOf(MediaType.UNKNOWN) -> true
+        MediaType.UNKNOWN in mediaTypes -> true
         else -> false
     }
 }

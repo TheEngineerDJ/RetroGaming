@@ -266,8 +266,23 @@ class RenamePlanValidator {
         return groups
     }
 
+    /**
+     * Keys a name within its directory.
+     *
+     * The separator is an ASCII unit separator rather than a space because both
+     * halves can contain spaces: a directory ref is a URI or a path, and a
+     * filename is arbitrary user data. With a space, directory `a` holding
+     * `b c` and directory `a b` holding `c` would produce the same key, and two
+     * unrelated files would look like a collision. A unit separator cannot
+     * appear in either half - [FilenameSanitizer] rejects control characters in
+     * a destination name.
+     */
     private fun nameKey(directory: StorageRef, name: String): String =
-        "${directory.value} ${name.lowercase()}"
+        directory.value + SEPARATOR + name.lowercase()
+
+    private companion object {
+        const val SEPARATOR = '\u001F'
+    }
 
     private fun detectDuplicateDestinations(
         entries: List<RenamePlanEntry>,

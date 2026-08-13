@@ -192,7 +192,7 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
         // Checked before any bytes are read. Hashing a 1.5 GB UMD image against
         // a cartridge-only catalogue cannot produce a match, and the honest
         // answer - "no dataset covers optical discs" - is already available
-        // (Constitution section 24: avoid unnecessary work before avoiding
+        // (Constitution section 324: avoid unnecessary work before avoiding
         // unnecessary I/O).
         outOfScopeEvidence(session)?.let { evidence ->
             return complete(

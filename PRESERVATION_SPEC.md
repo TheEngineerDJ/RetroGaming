@@ -2,7 +2,7 @@
 
 **Project:** RetroVault
 **Role:** Digital and historical preservation rules
-**Authority:** `Constitution.md`
+**Authority:** `CONSTITUTION.md`
 
 ## 1. Purpose
 

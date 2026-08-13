@@ -1,7 +1,7 @@
 # RELEASE_SPEC.md
 
 **Project:** RetroVault  
-**Authority:** `Constitution.md`
+**Authority:** `CONSTITUTION.md`
 
 ## 1. Purpose
 

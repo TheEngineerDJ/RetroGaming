@@ -570,6 +570,86 @@ class PersistenceTest {
         assertNotNull(loaded.finishedAtEpochMillis)
     }
 
+    @Test
+    fun `an out of scope tally survives a round trip separately from unmatched`() = runTest {
+        // The two counts drive different advice, so persisting them into one
+        // column would undo the distinction the moment the app restarts.
+        val sessionId = ScanSessionId("session-scope")
+        sessions.start(
+            ScanSessionRecord(
+                id = sessionId,
+                rootRef = StorageRef("mem:/roms"),
+                rootDisplayName = "Roms",
+                startedAtEpochMillis = 1,
+                finishedAtEpochMillis = null,
+                datSourceIds = emptyList(),
+                namingProfileVersionedId = "no-intro@v1",
+                resolverVersion = "test",
+            ),
+        )
+
+        sessions.finish(
+            sessionId,
+            ScanSummary(processed = 5, unmatched = 2, outOfCatalogueScope = 3),
+            cancelled = false,
+        )
+
+        val loaded = (sessions.find(sessionId) as Outcome.Success).value
+        assertEquals(2, loaded.summary.unmatched)
+        assertEquals(3, loaded.summary.outOfCatalogueScope)
+    }
+
+    @Test
+    fun `an out of scope resolution survives a round trip`() = runTest {
+        val observation = FileObservation(
+            id = ObservationId("obs-scope"),
+            sessionId = ScanSessionId("session-scope-2"),
+            storageRef = StorageRef("mem:/roms/game.iso"),
+            parentRef = StorageRef("mem:/roms"),
+            filename = "game.iso",
+            relativePath = "game.iso",
+            size = 4096,
+            lastModifiedEpochMillis = 1,
+            container = ContainerKind.RAW,
+            observedAtEpochMillis = 1,
+        )
+        sessions.start(
+            ScanSessionRecord(
+                id = observation.sessionId,
+                rootRef = StorageRef("mem:/roms"),
+                rootDisplayName = "Roms",
+                startedAtEpochMillis = 1,
+                finishedAtEpochMillis = null,
+                datSourceIds = emptyList(),
+                namingProfileVersionedId = "no-intro@v1",
+                resolverVersion = "test",
+            ),
+        )
+        observations.saveAll(
+            listOf(
+                ResolvedObservation(
+                    observation,
+                    ArtifactResolution.terminal(
+                        observationId = observation.id,
+                        state = ResolutionState.OUT_OF_CATALOGUE_SCOPE,
+                        resolverVersion = "test",
+                        tokenizerVersion = "test",
+                        normalizerVersion = "test",
+                    ),
+                ),
+            ),
+        )
+
+        val loaded = (observations.findBySession(observation.sessionId) as Outcome.Success).value.single()
+
+        assertEquals(ResolutionState.OUT_OF_CATALOGUE_SCOPE, loaded.resolution.state)
+        assertEquals(ConfidenceLevel.UNKNOWN, loaded.resolution.confidence)
+        assertEquals(
+            com.retrovault.domain.resolution.IdentityBasis.NONE,
+            loaded.resolution.identityBasis,
+        )
+    }
+
     // ------------------------------------------------------------------
     // Rename journal
     // ------------------------------------------------------------------

@@ -344,7 +344,9 @@ Those belong to domain/application/infrastructure layers.
 
 Existing rows are backfilled from the rom-name extensions already stored, so an upgraded catalogue gains coverage without a re-import. The backfill is generated from the same vocabulary the live classification uses, so the two cannot drift. Extensions belonging to more than one medium are left `UNKNOWN`, which reads as "covers everything" and therefore never narrows a search.
 
-`idx_dump_record_media(source_id, media_type)` serves the coverage aggregation, which is read once per scan.
+`idx_dump_record_media(source_id, media_type)` serves the coverage aggregation, which is read once per scan. The backfill itself uses `LIKE '%.<extension>'`, which cannot use an index; that is accepted because it runs once, and it is safe because the extension vocabulary is asserted to contain no LIKE metacharacter.
+
+`scan_session.out_of_scope` is persisted separately from `unmatched` so the distinction survives a restart.
 
 ### Migration hazard, recorded
 

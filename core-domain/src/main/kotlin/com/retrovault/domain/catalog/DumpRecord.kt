@@ -89,7 +89,7 @@ data class DumpRecord(
      * First-class rather than derived on demand, because it is what lets
      * RetroVault measure what a dataset covers and tell "this library is
      * uncatalogued" apart from "this library is unidentifiable"
-     * (Constitution section 23).
+     * (Constitution section 323).
      */
     val mediaType: MediaType,
     val canonicalTitle: String,

@@ -41,6 +41,10 @@ tasks.withType<Test>().configureEach {
         layout.projectDirectory.dir("src/main/kotlin").asFile.absolutePath,
     )
 
+    // The specifications are the authority the source cites by section number.
+    // A test that checks those citations still resolve needs to reach them.
+    systemProperty("retrovault.repoRoot", rootDir.absolutePath)
+
     testLogging {
         events("failed")
         exceptionFormat = TestExceptionFormat.FULL

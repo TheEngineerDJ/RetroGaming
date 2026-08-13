@@ -2,7 +2,7 @@
 
 ## Status
 
-Derived from `Constitution.md`.
+Derived from `CONSTITUTION.md`.
 
 This document converts constitutional principles into an implementation-oriented architecture. It does not override the Constitution.
 

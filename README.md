@@ -10,7 +10,7 @@ The governing rule, from `TESTING_SPEC.md`:
 
 > A missed match is acceptable. A wrong match presented as certain is not.
 
-Specifications live in this repository and are authoritative. `Constitution.md`
+Specifications live in this repository and are authoritative. `CONSTITUTION.md`
 is the highest authority; `CLAUDE_CODE.md` explains how to consume the chain.
 
 ---

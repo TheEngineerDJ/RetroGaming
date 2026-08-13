@@ -2,7 +2,7 @@
 
 **Purpose:** External research review of the product constitution and strategic direction.
 
-**Status:** Constitutional guidance. No implementation dependency unless adopted into `Constitution.md`.
+**Status:** Constitutional guidance. No implementation dependency unless adopted into `CONSTITUTION.md`.
 
 ## 1. Executive finding
 

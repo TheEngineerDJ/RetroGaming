@@ -111,7 +111,9 @@ Determine whether any imported dataset covers that medium, using coverage **meas
 
 If no dataset covers the medium — or nothing has been imported — stop here and report the artifact as out of catalogue scope. No content is read. The result names the medium, names what the imported datasets do cover, and states the remedy.
 
-Every uncertain case continues into the ladder. An unknown medium, a dataset of unrecognised media, or unmeasured coverage all mean "proceed": a scope judgement must never cause a missed match.
+Every uncertain case continues into the ladder. An unknown medium, a dataset holding any record of unrecognised medium, a dataset that indexes nothing, or unmeasured coverage all mean "proceed": a scope judgement must never cause a missed match.
+
+A catalogue that cannot report its coverage degrades to unmeasured rather than failing the scan.
 
 ### Stage 1 — File discovery
 
@@ -311,7 +313,7 @@ Every imported dataset records the preservation project that produced it, read f
 
 Coverage is measured per dataset from the media types of the records it indexes, counting only records fit for matching. A dataset whose disc entries are all `nodump` placeholders does not cover discs.
 
-Coverage is read once per scan, not once per artifact.
+Coverage is read once per scan, not once per artifact. If that read fails, the scan continues with coverage unmeasured, which costs the "not listed" versus "not covered" distinction and nothing else.
 
 ## 10C. Reporting absence
 

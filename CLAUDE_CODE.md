@@ -4,7 +4,7 @@
 
 Read these files before changing code:
 
-1. `Constitution.md`
+1. `CONSTITUTION.md`
 2. `ARCHITECTURE.md`
 3. `DOMAIN_MODEL.md`
 4. `ROM_INTELLIGENCE.md`
@@ -14,7 +14,7 @@ Read these files before changing code:
 8. `TESTING_SPEC.md`
 9. `BUILD_PLAN.md`
 
-`Constitution.md` is highest authority.
+`CONSTITUTION.md` is highest authority.
 
 ## Operating rules
 

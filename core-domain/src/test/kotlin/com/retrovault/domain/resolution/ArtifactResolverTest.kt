@@ -888,7 +888,7 @@ class ArtifactResolverTest {
 
     @Test
     fun `an out of scope file is never hashed`() {
-        // Constitution section 24: avoid unnecessary work before avoiding
+        // Constitution section 324: avoid unnecessary work before avoiding
         // unnecessary I/O. Reading 1.5 GB to prove a cartridge dataset does not
         // list a disc is the definition of unnecessary.
         val driver = TestCatalogDriver(

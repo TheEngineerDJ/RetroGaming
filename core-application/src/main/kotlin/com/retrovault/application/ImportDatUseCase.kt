@@ -203,7 +203,7 @@ class ImportDatUseCase(
             provider = input.provider,
             setName = setName,
             author = metadata?.author,
-            homepage = metadata?.description,
+            description = metadata?.description,
         )
         return DatSourceRef(
             id = DatSourceId("${input.provider}:$setName:${version ?: "unversioned"}"),

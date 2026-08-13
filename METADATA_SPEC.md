@@ -2,7 +2,7 @@
 
 **Project:** RetroVault
 **Role:** Metadata and canonical-data rules
-**Authority:** `Constitution.md`
+**Authority:** `CONSTITUTION.md`
 
 ## 1. Purpose
 

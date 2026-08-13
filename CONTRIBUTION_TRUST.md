@@ -2,7 +2,7 @@
 
 **Project:** RetroVault
 **Role:** Community contribution and trust model
-**Authority:** `Constitution.md`
+**Authority:** `CONSTITUTION.md`
 
 ## 1. Purpose
 

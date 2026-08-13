@@ -2,7 +2,7 @@
 
 **Project:** RetroVault
 **Role:** Security and safety requirements
-**Authority:** `Constitution.md`
+**Authority:** `CONSTITUTION.md`
 
 ## 1. Threat model
 

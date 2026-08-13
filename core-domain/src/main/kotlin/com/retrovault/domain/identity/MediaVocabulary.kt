@@ -3,7 +3,7 @@ package com.retrovault.domain.identity
 /**
  * The physical or logical medium a dump came from.
  *
- * Constitution section 23 is explicit that ROMs are not all the same class of
+ * Constitution section 323 is explicit that ROMs are not all the same class of
  * artifact and that the architecture must avoid a universal
  * "one file = one hash = one game" assumption. Media type is the first-class
  * expression of that: a PSP UMD image and a SNES cartridge dump are catalogued
@@ -106,12 +106,17 @@ object MediaTypeVocabulary {
     }
 
     /**
-     * The full extension table, for callers that must reproduce this mapping
-     * somewhere it cannot be called - a SQL backfill, for instance. Exposing it
-     * keeps that duplicate in step with the live classification instead of
-     * drifting from it.
+     * The extension table as [forExtension] applies it, for callers that must
+     * reproduce this mapping somewhere it cannot be called - a SQL backfill,
+     * for instance.
+     *
+     * Ambiguous extensions are removed here rather than left for the caller to
+     * remember. An extension listed in both tables would classify one way live
+     * and the other way in the backfill, and a catalogue whose stored media
+     * disagree with what a re-import would produce is a silent, invisible
+     * fault.
      */
-    fun knownExtensions(): Map<String, MediaType> = byExtension
+    fun knownExtensions(): Map<String, MediaType> = byExtension - ambiguous
 
     fun forExtension(extension: String?): MediaType {
         val key = extension?.lowercase()?.removePrefix(".").orEmpty()
@@ -123,7 +128,7 @@ object MediaTypeVocabulary {
 /**
  * Which preservation project produced a dataset.
  *
- * Constitution section 6 requires source-specific status to be preserved rather
+ * Constitution section 306 requires source-specific status to be preserved rather
  * than flattened into one universal truth value, and section 196 forbids a DAT
  * from becoming an invisible authority. Knowing that a dataset came from Redump
  * rather than No-Intro is what lets RetroVault explain *why* a PSP library
@@ -177,19 +182,33 @@ object DatasetKindVocabulary {
      * [DatasetKind.UNKNOWN] and loses no capability: coverage is measured from
      * its records either way.
      */
-    fun infer(provider: String?, setName: String?, author: String?, homepage: String?): DatasetKind {
-        val haystack = listOfNotNull(provider, setName, author, homepage)
+    fun infer(
+        provider: String?,
+        setName: String?,
+        author: String?,
+        description: String?,
+    ): DatasetKind {
+        val haystack = listOfNotNull(provider, setName, author, description)
             .joinToString(" ")
             .lowercase()
         return when {
-            haystack.contains("redump") -> DatasetKind.REDUMP
-            haystack.contains("no-intro") || haystack.contains("no_intro") ||
-                haystack.contains("nointro") -> DatasetKind.NO_INTRO
-            haystack.contains("tosec") -> DatasetKind.TOSEC
-            haystack.contains("mame") || haystack.contains("fbneo") ||
-                haystack.contains("final burn") -> DatasetKind.MAME
-            haystack.contains("goodtools") || haystack.contains("goodset") -> DatasetKind.GOODTOOLS
+            haystack.mentions("redump") -> DatasetKind.REDUMP
+            haystack.mentions("no-intro", "no_intro", "nointro") -> DatasetKind.NO_INTRO
+            haystack.mentions("tosec") -> DatasetKind.TOSEC
+            haystack.mentions("mame", "fbneo", "final burn") -> DatasetKind.MAME
+            haystack.mentions("goodtools", "goodset") -> DatasetKind.GOODTOOLS
             else -> DatasetKind.UNKNOWN
         }
+    }
+
+    /**
+     * Whole-word containment.
+     *
+     * A plain substring test attributes `Gamemaster` to MAME, because "mame"
+     * sits inside it. Misattributed provenance is not merely untidy: it is shown
+     * to the user as a fact about where their data came from.
+     */
+    private fun String.mentions(vararg needles: String): Boolean = needles.any { needle ->
+        Regex("(?<![a-z0-9])" + Regex.escape(needle) + "(?![a-z0-9])").containsMatchIn(this)
     }
 }

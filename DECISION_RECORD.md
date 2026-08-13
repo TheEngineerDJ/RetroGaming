@@ -1,13 +1,13 @@
 # DECISION_RECORD.md
 
 **Project:** RetroVault  
-**Authority:** `Constitution.md`
+**Authority:** `CONSTITUTION.md`
 
 ## Purpose
 
 Record major architectural and product decisions so future implementation does not repeatedly reopen settled questions.
 
-This is not a substitute for the Constitution. When a decision changes constitutional intent, update `Constitution.md` first.
+This is not a substitute for the Constitution. When a decision changes constitutional intent, update `CONSTITUTION.md` first.
 
 ## Decision format
 
@@ -29,7 +29,7 @@ Each significant decision should record:
 
 **Status:** Accepted
 
-`Constitution.md` is product authority. Derived documents and code must align with it.
+`CONSTITUTION.md` is product authority. Derived documents and code must align with it.
 
 ### DR-002 — Offline-first core
 

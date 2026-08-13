@@ -388,7 +388,7 @@ object Schema {
     /**
      * Makes media type and dataset provenance first-class.
      *
-     * Constitution section 22 and section 23 require media-specific evidence and
+     * Constitution section 322 and section 323 require media-specific evidence and
      * forbid a universal "one file = one hash = one game" assumption. Until now
      * the schema had no place to record what medium a dump came from, so a PSP
      * UMD image and a SNES cartridge dump were indistinguishable rows and
