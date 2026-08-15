@@ -45,6 +45,19 @@ tasks.withType<Test>().configureEach {
     // A test that checks those citations still resolve needs to reach them.
     systemProperty("retrovault.repoRoot", rootDir.absolutePath)
 
+    // Those tests read files Gradle has no other reason to know about: the
+    // specifications, and the Android sources, which are not compiled at all
+    // on a machine without an SDK. Without declaring them the test task stays
+    // UP-TO-DATE after they change, and a guard that does not re-run is not a
+    // guard.
+    inputs.files(
+        fileTree(rootDir) {
+            include("*.md")
+            include("app/src/**/*.kt")
+            include("platform-android/src/**/*.kt")
+        },
+    ).withPropertyName("retrovaultRepoInputs").withPathSensitivity(PathSensitivity.RELATIVE)
+
     testLogging {
         events("failed")
         exceptionFormat = TestExceptionFormat.FULL

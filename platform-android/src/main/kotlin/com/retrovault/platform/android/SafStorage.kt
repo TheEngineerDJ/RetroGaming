@@ -174,7 +174,7 @@ class SafDirectoryWalker(
                                 .toStorageRef(),
                             name = name,
                             relativePath = childPath,
-                            size = rows.longOrZero(sizeColumn),
+                            size = rows.longOrNull(sizeColumn) ?: sizeOf(childUri),
                             lastModifiedEpochMillis = rows.longOrNull(modifiedColumn),
                         ),
                     ),
@@ -195,8 +195,40 @@ class SafDirectoryWalker(
         }
     }
 
-    private fun Cursor.longOrZero(column: Int): Long =
-        if (column < 0 || isNull(column)) 0L else getLong(column)
+    /**
+     * The size of one document, asked for directly.
+     *
+     * `COLUMN_SIZE` is optional in the DocumentsContract and some providers
+     * omit it from a directory listing. Substituting zero would be a
+     * fabrication with real consequences: size filtering is the first
+     * identification stage, a size that matches no catalogue record skips
+     * cryptographic matching entirely (Constitution section 151), and the user
+     * would then be told "no catalogue record has this exact size" about a size
+     * nothing ever measured.
+     *
+     * So the cheap path is tried first - one cursor for a whole directory - and
+     * only a file the listing could not size costs an extra query. On providers
+     * that report sizes, which is the common case, nothing extra happens at all.
+     *
+     * A provider that will not answer even then leaves the size genuinely
+     * unknown; zero is returned because the port cannot yet express that, and
+     * the resolver's fallback treats it as a size no record matches.
+     */
+    private fun sizeOf(documentUri: Uri): Long = try {
+        resolver.query(
+            documentUri,
+            arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (cursor == null || !cursor.moveToFirst()) 0L else cursor.longOrNull(0) ?: 0L
+        }
+    } catch (failure: SecurityException) {
+        0L
+    } catch (failure: IllegalArgumentException) {
+        0L
+    }
 
     private fun Cursor.longOrNull(column: Int): Long? =
         if (column < 0 || isNull(column)) null else getLong(column)
@@ -289,7 +321,20 @@ class SafContentSource(
         )
         try {
             resolver.query(uri, projection, null, null, null).use { cursor ->
-                if (cursor == null || !cursor.moveToFirst()) {
+                // A null cursor is the provider declining to answer, which is
+                // not the same fact as an empty one. Reporting it as absence
+                // would let a provider outage read as "your file is gone" -
+                // exactly what ArtifactState.readable exists to prevent - and
+                // the validator and reconciler both derive that from a failed
+                // stat, so the failure has to be reported as a failure.
+                if (cursor == null) {
+                    return@withContext Outcome.failure(
+                        RetroVaultFailure.UnsupportedStorage("the storage provider did not answer for this file"),
+                    )
+                }
+                // An empty cursor *is* an answer: the provider looked and the
+                // document is not there.
+                if (!cursor.moveToFirst()) {
                     return@withContext Outcome.success(
                         ArtifactState(ref, exists = false, filename = null, size = null, writable = false),
                     )
@@ -327,7 +372,12 @@ class SafContentSource(
         } catch (failure: SecurityException) {
             Outcome.failure(RetroVaultFailure.PermissionDenied(ref))
         } catch (failure: IllegalArgumentException) {
-            Outcome.success(ArtifactState(ref, exists = false, filename = null, size = null, writable = false))
+            // The URI could not be addressed - a stale document id, or a
+            // provider that is no longer installed. RetroVault failed to look;
+            // it did not observe an absence.
+            Outcome.failure(
+                RetroVaultFailure.UnsupportedStorage(failure.message ?: "this file could not be addressed"),
+            )
         }
     }
 
@@ -365,6 +415,10 @@ class SafContentSource(
                 Outcome.success(DirectorySnapshot(directory, names))
             } catch (failure: SecurityException) {
                 Outcome.failure(RetroVaultFailure.PermissionDenied(directory))
+            } catch (failure: IllegalArgumentException) {
+                Outcome.failure(
+                    RetroVaultFailure.UnsupportedStorage(failure.message ?: "the folder could not be listed"),
+                )
             }
         }
 
@@ -424,6 +478,14 @@ class SafRenameExecutor(
             } catch (failure: IllegalStateException) {
                 Outcome.failure(
                     RetroVaultFailure.RenameFailed(ref, failure.message ?: "the provider rejected the rename"),
+                )
+            } catch (failure: IllegalArgumentException) {
+                // `renameDocument` rejects a URI it cannot parse this way. It
+                // must become a typed, journalled failure like every other
+                // rename outcome: an uncaught throw here would escape mid-batch
+                // with operations already marked EXECUTING.
+                Outcome.failure(
+                    RetroVaultFailure.RenameFailed(ref, failure.message ?: "the file could not be addressed"),
                 )
             } catch (failure: IOException) {
                 Outcome.failure(RetroVaultFailure.RenameFailed(ref, failure.message ?: "I/O error"))

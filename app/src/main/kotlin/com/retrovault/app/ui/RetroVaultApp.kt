@@ -47,16 +47,17 @@ import com.retrovault.domain.resolution.ConfidenceLevel
 @Composable
 fun RetroVaultApp(
     viewModel: ScannerViewModel,
-    onPersistFolderPermission: (Uri) -> Unit,
-    onPersistDocumentPermission: (Uri) -> Unit,
+    onPersistFolderPermission: (Uri) -> Boolean,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
-        if (uri != null) {
-            onPersistFolderPermission(uri)
+        // Access is persisted before the folder is accepted. A folder
+        // RetroVault cannot keep access to would scan once and then leave any
+        // interrupted rename unrecoverable, so it is not adopted at all.
+        if (uri != null && onPersistFolderPermission(uri)) {
             // The tree URI is turned into a document URI so that the scanner
             // and the rename executor address the folder the same way.
             val documentUri = DocumentsContract.buildDocumentUriUsingTree(
@@ -70,11 +71,13 @@ fun RetroVaultApp(
         }
     }
 
+    // No persistable grant is taken for the DAT. `ACTION_OPEN_DOCUMENT` does
+    // not offer one, so asking would always fail, and it is not needed: the DAT
+    // is read once into the local catalogue at import and never opened again.
     val datPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri != null) {
-            onPersistDocumentPermission(uri)
             viewModel.onDatSelected(
                 StorageRef(uri.toString()),
                 uri.lastPathSegment?.substringAfterLast('/') ?: "DAT file",
@@ -216,7 +219,12 @@ private fun PreviewSection(state: ScannerUiState, onDryRun: () -> Unit, onExecut
                 .take(MAX_PREVIEW_ROWS)
                 .forEach { row ->
                     Text("${row.currentName}  →  ${row.proposedName}")
-                    Text("    ${row.matchType} · ${row.confidence}")
+                    // The basis travels with the confidence because they answer
+                    // different questions, and the preview is where the user
+                    // decides whether to accept a rename (Constitution
+                    // section 306). Showing certainty without saying what it
+                    // rests on is exactly what UX_SPEC.md section 16 forbids.
+                    Text("    ${row.matchType} · ${row.confidence} · ${row.identityBasis}")
                 }
 
             state.executionReport?.let { Text(it, fontWeight = FontWeight.Bold) }

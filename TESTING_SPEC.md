@@ -249,3 +249,12 @@ The source cites constitutional sections by number, so those citations are check
 **Historical identity.** A display name an entity stops carrying is retained as an alias and stays findable; a current name is never also one of its own aliases; timestamps record first sighting and last change; first sighting never moves; a row predating timestamps reports unknown rather than the epoch; a skipped write to a confirmed entity is not an update.
 
 **Migration.** Version 1 reaches the current version in one pass; the entity graph enforces its own foreign keys; the release-id backfill agrees with what a fresh import writes; version 5 adds timestamps to every entity table without backdating the rows already there.
+
+
+## The Android layer, from the JVM
+
+The Android modules are excluded from the build when no SDK is present, so these run as ordinary JVM tests against the sources as text. They are a floor, not a substitute for compiling.
+
+**Wiring.** Every `com.retrovault.*` import in the Android sources resolves to a declaration the core still has; every port the app needs has an Android implementation; the composition root passes `applyCorrections`, `corrections` and `entities` into the scan — the arguments that are optional on the use case and therefore silent when forgotten.
+
+**SAF honesty.** `stat` reports a provider that returns no cursor, and a URI that cannot be addressed, as failures rather than as an observed absence.

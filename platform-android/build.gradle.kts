@@ -32,7 +32,11 @@ dependencies {
     api(project(":core-application"))
     api(project(":core-data"))
     implementation(project(":core-io"))
-    implementation(project(":core-dat"))
+    // `api`, not `implementation`: AndroidDatByteSource is public and implements
+    // core-dat's DatByteSource, so the type is part of this module's ABI. As an
+    // implementation dependency it would compile here and then fail for any
+    // consumer that did not happen to declare core-dat itself.
+    api(project(":core-dat"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
 }

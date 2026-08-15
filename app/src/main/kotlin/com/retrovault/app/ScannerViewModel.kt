@@ -12,6 +12,7 @@ import com.retrovault.application.StorageLocation
 import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
+import com.retrovault.domain.policy.AutomationDecision
 import com.retrovault.domain.rename.PlanVerdict
 import com.retrovault.domain.rename.RenamePlan
 import com.retrovault.domain.resolution.ConfidenceLevel
@@ -91,6 +92,15 @@ class ScannerViewModel(private val container: RetroVaultContainer) : ViewModel()
         }
     }
 
+    /**
+     * Reports a storage problem the platform layer detected.
+     *
+     * Exists so a permission failure reaches the user through the same channel
+     * as every other notice instead of being swallowed at the Activity, where
+     * nothing can see it.
+     */
+    fun reportStorageProblem(message: String) = notice(message)
+
     fun onFolderSelected(ref: StorageRef, displayName: String) {
         root = StorageLocation(ref, displayName)
         _state.update { it.copy(rootDisplayName = displayName, phase = WorkflowPhase.IDLE) }
@@ -160,6 +170,7 @@ class ScannerViewModel(private val container: RetroVaultContainer) : ViewModel()
             _state.update { it.copy(currentActivity = "Checking the whole batch") }
             val generated = container.generatePlan.generate(
                 sessionId = session,
+                policy = container.automationPolicy,
                 confirmations = _state.value.confirmed,
             )
             when (generated) {
@@ -268,9 +279,13 @@ class ScannerViewModel(private val container: RetroVaultContainer) : ViewModel()
         candidates = resolution.candidates.map { candidate ->
             "${candidate.record.setName} (${candidate.record.source.provider})"
         },
-        // Only files the domain considers reviewable may be confirmed. An
-        // unmatched file is never offered for confirmation.
-        reviewable = resolution.selected != null && resolution.confidence != ConfidenceLevel.EXACT,
+        // Asked of the policy rather than inferred from the confidence label.
+        // Confirmation only ever upgrades REQUIRES_REVIEW: it cannot authorise
+        // a FORBIDDEN resolution, and an AUTOMATIC one has nothing to confirm.
+        // Deciding that here from confidence would put a domain rule in the
+        // presentation layer and let the screen offer a checkbox the planner
+        // then ignores.
+        reviewable = container.automationPolicy.decide(resolution) == AutomationDecision.REQUIRES_REVIEW,
     )
 
     private fun notice(message: String) {

@@ -487,3 +487,46 @@ The ROM intelligence system requires a permanent regression corpus containing:
 If a module cannot be explained in terms of domain responsibility, input, output, and dependency direction, it is not ready to become production architecture.
 
 Complexity must be justified by domain value.
+
+
+# 21. The Android Binding, In Practice
+
+Section 12 says where Android code belongs. This records what the binding must actually get right, because each of these was found wrong once.
+
+## 21.1 The build excludes what it cannot compile
+
+`settings.gradle.kts` drops `:app` and `:platform-android` when no Android SDK is present, so the core stays buildable on a plain JDK. The cost is that on those machines — CI among them — nothing compiles the Android sources, and a renamed core type or a newly added port method breaks them silently.
+
+`AndroidWiringTest` closes the gap it can close from the JVM: it resolves every `com.retrovault.*` import in the Android sources against the declarations the core actually has, checks that every port has an Android implementation, and checks the composition root passes the arguments that are *optional* on a use case. Those optional arguments are the dangerous ones — a container that omits them compiles, and the behaviour is simply absent on the device while every JVM test passes. The test task declares the Android sources and the specifications as inputs so it re-runs when they change.
+
+It is not a substitute for compiling. It is a floor.
+
+## 21.2 SQLite bind arguments are typed
+
+`rawQuery` accepts only `String[]`. That is the wrong contract twice: a null argument makes it throw from `bindString` rather than binding SQL NULL, and every number arrives as text, leaving correctness resting on SQLite applying column affinity to each comparison. The JDBC binding binds by type, so string-only binding would let the two platforms disagree about a query the tests say is correct — which would make section 10's promise (the same repositories on both platforms) untrue in exactly the places nobody looks.
+
+`AndroidSqlDatabase.query` therefore binds through `rawQueryWithFactory`, which hands over the `SQLiteQuery` before it runs. Null binds as NULL, integers as integers, blobs as blobs.
+
+`Schema` owns migration, not `SQLiteOpenHelper`: RetroVault's version lives in its own `schema_version` table, so both platforms run identical, tested migration code and the helper's `onCreate`/`onUpgrade` do nothing. `onDowngrade` is overridden to do nothing as well — the default throws, which would crash an older build on open before anything could explain why.
+
+## 21.3 A provider that will not answer has not reported an absence
+
+The Storage Access Framework fails in ways a local filesystem does not: a grant is revoked, a volume is unmounted, a provider is uninstalled, an optional column is omitted. Every one of those is a failure to *look*.
+
+- `stat` returns a failure when the provider returns no cursor or the URI cannot be addressed, and reports `exists = false` only when the provider answered and the document was not there. The validator turns a failed `stat` into `readable = false` and the reconciler into `storageReadable = false`, so this is what stops a permission problem being reported as "your file is gone" (Constitution section 174 in miniature).
+- `COLUMN_SIZE` is optional. A missing size is asked for with a second, per-file query rather than substituted with zero: size filtering is the first identification stage, a size matching no record skips cryptographic matching entirely (Constitution section 151), and the user would be told "no catalogue record has this exact size" about a size nothing measured. The cheap path — one cursor per directory — is still tried first.
+- `FLAG_SUPPORTS_RENAME` is also optional, and there its absence reads as *permitted*: treating unknown as "cannot rename" would make the app inert on such a provider, while treating it as "may rename" costs at most one typed, journalled failure the user can see.
+
+The asymmetry is deliberate. An unknown that could cause a wrong statement about the user's files resolves to "unknown"; an unknown that could only cost a retry resolves to "try it".
+
+## 21.4 Access has to outlive the process
+
+A grant from the folder picker lasts only as long as the process unless it is persisted. RetroVault needs it to outlive the process: an interrupted rename batch is reconciled at the *next* launch (DATABASE.md section 21), and reconciliation has to read the same folder.
+
+`SafPermissions.persistTree` takes read and write access and **reports** what happened. A folder whose access cannot be kept is not adopted at all, because it would scan once and then leave any interrupted rename unrecoverable. Taking the grant is also read back: the per-app table of persisted grants is finite, and the call can succeed while the system declines to record it.
+
+No persistable grant is taken for an imported DAT. `ACTION_OPEN_DOCUMENT` does not offer one, so asking would always fail — and it is not needed, because the DAT is read once into the local catalogue at import and never opened again.
+
+## 21.5 The screen asks the domain
+
+A view model that decides which files need review is re-implementing `AutomationPolicy` in the presentation layer, and will drift from it. The policy is constructed once in the composition root and used both to decide which rows offer a confirmation checkbox and to build the plan, so the screen cannot offer a confirmation the planner ignores.
