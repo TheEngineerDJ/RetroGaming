@@ -230,6 +230,18 @@ sealed interface MatchSignal {
      * carries that detail and re-deriving it would risk stating something the
      * original decision did not.
      */
+    /**
+     * The file differs from the catalogued dump by representation only.
+     *
+     * Constitution section 200 asks the matching architecture to classify a
+     * representation difference rather than reject the candidate over it. This
+     * is that classification, made visible: the user is told *why* their file
+     * is not byte-identical to the reference it matched.
+     */
+    data class RepresentationDiffers(val form: String) : MatchSignal {
+        override val id: String get() = "representation_differs_${form.lowercase()}"
+    }
+
     data class Recorded(
         override val id: String,
         override val excludesIdentity: Boolean,

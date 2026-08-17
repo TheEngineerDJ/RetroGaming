@@ -20,7 +20,21 @@ data class ArtifactContentRef(
     val storageRef: StorageRef,
     /** `null` means the file itself; otherwise the entry inside the container. */
     val archiveEntryPath: String? = null,
-)
+    /**
+     * Bytes to skip before the content that carries identity begins.
+     *
+     * Non-zero when the file starts with a copier or console header. A
+     * preservation dataset catalogues the dump *without* that prefix, so
+     * hashing from byte zero would produce a digest matching nothing and
+     * Constitution section 200 would be violated in the most literal way: a
+     * difference of representation rejected as a difference of identity.
+     */
+    val byteOffset: Long = 0,
+) {
+    init {
+        require(byteOffset >= 0) { "A content offset must not be negative" }
+    }
+}
 
 /** One file inside a container, as seen without extracting it to disk. */
 data class ArchiveEntryObservation(
@@ -60,6 +74,15 @@ data class FileObservation(
     val container: ContainerKind,
     val hashes: HashDigests = HashDigests.EMPTY,
     val archiveEntries: List<ArchiveEntryObservation> = emptyList(),
+    /**
+     * A prefix in front of the software, when one was recognised.
+     *
+     * Kept on the observation rather than resolved away, because it is
+     * something that was *seen*: DOMAIN_MODEL.md section 24 makes an
+     * observation a record of what the scanner found, and the header is part of
+     * what this file is even though it is not part of what the file *contains*.
+     */
+    val header: DetectedHeader? = null,
     val observedAtEpochMillis: Long,
 ) {
     init {
@@ -71,7 +94,10 @@ data class FileObservation(
         get() = filename.substringAfterLast('.', missingDelimiterValue = "")
             .takeIf { it.isNotEmpty() && it.length <= 8 }
 
-    val contentRef: ArtifactContentRef get() = ArtifactContentRef(storageRef)
+    val contentRef: ArtifactContentRef get() = ArtifactContentRef(storageRef, byteOffset = headerLength)
+
+    /** Bytes of header in front of the payload. Zero when there is none. */
+    val headerLength: Long get() = header?.length ?: 0L
 
     fun withHash(hash: HashValue): FileObservation = copy(hashes = hashes.with(hash))
 
@@ -110,9 +136,18 @@ data class FileObservation(
         ContainerKind.UNSUPPORTED_ARCHIVE -> null
     }
 
-    /** Size of the identity-bearing bytes, or `null` when there is no single artifact. */
+    /**
+     * Size of the identity-bearing bytes, or `null` when there is no single
+     * artifact.
+     *
+     * A header is subtracted, so a headered dump is looked up by the size the
+     * catalogue actually records. Without this the first identification stage -
+     * size filtering, Constitution section 151 - excludes every catalogued
+     * record before any hash is computed, and the file falls through to being
+     * identified by its filename.
+     */
     fun identityBearingSize(): Long? = when (container) {
-        ContainerKind.RAW -> size
+        ContainerKind.RAW -> (size - headerLength).takeIf { it > 0 }
         ContainerKind.ZIP -> candidateArchiveEntries.singleOrNull()?.uncompressedSize
         ContainerKind.UNSUPPORTED_ARCHIVE -> null
     }

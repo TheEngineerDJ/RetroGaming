@@ -938,3 +938,18 @@ Constitution sections 41 and 70 and invariant 12 require earlier knowledge to st
 - **Correction history is append-only**, so what a user asserted before a supersession stays answerable.
 
 Release dates, manufacture dates, acquisition dates and the rest of section 41's list are facts about entities RetroVault does not model yet. They arrive with those entities.
+
+
+## Modified dumps
+
+Constitution section 200 requires the matching architecture to classify a representation difference before rejecting a candidate, and section 306 requires **Modified** to be a distinguishable state: "artifact differs from a known reference but may retain useful identity evidence". A copier-headered ROM is the ordinary case — and the common one, because a large share of real SNES and NES libraries carry headers.
+
+`RomHeaderDetector` recognises prefixes that can be **skipped** to reach the catalogued dump: iNES, Famicom Disk System, Lynx and Atari 7800 by magic number, and the SNES copier header by size, because every SNES dump is a whole number of kilobytes and a file 512 bytes over a kilobyte boundary is carrying one. An interleaved Mega Drive SMD dump is deliberately *not* claimed: recovering its payload is a transform rather than an offset, and naming it would promise an identification RetroVault cannot make.
+
+The header travels on the observation, which is a record of what was *seen*. `identityBearingSize()` subtracts it and `contentRef` carries a byte offset, so the whole existing pipeline — size filter, CRC escalation, cryptographic match — operates on the payload without any stage knowing why. That ordering matters: without it, size filtering excludes every catalogued record before a hash is computed, and the file falls through to filename matching, which for a headered library means content identification effectively does not happen.
+
+`MODIFIED_MATCH` is kept apart from the exact states. Both rest on a measurement, and only one describes a file a preservation dataset would accept; telling a user their headered copy *is* the catalogued dump would be false. `IdentityBasis` is `VERIFIED_CONTENT` — the bytes carrying identity were measured — while `ConfidenceLevel` is `STRONG` rather than `EXACT`.
+
+Renaming one needs review by default. The measurement is real, but the canonical name describes the dump the dataset holds and this file is not that dump, so `AutomationPolicy.allowHeaderedAutomation` lets a user normalising a headered library opt in once rather than confirming each file.
+
+Detection is deliberately asymmetric in its failure modes. A header wrongly detected shifts every following byte and matches nothing, costing a read; a header wrongly missed costs the fallback that always existed. Neither can produce a *wrong* identity, because identity still rests on a cryptographic hash of whatever the payload turns out to be — and when the first bytes cannot be read at all, no header is claimed rather than one being assumed.

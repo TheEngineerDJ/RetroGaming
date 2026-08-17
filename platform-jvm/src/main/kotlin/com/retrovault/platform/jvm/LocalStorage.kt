@@ -164,6 +164,10 @@ class LocalContentSource(
         val outcome = try {
             openStream(path).use { stream ->
                 if (ref.archiveEntryPath == null) {
+                    // A header is skipped before hashing so the digest is of
+                    // the dump the catalogue records, not of the file that
+                    // happens to contain it (Constitution section 200).
+                    stream.skipFully(ref.byteOffset)
                     StreamingHasher.hash(stream, algorithms, cancellation)
                 } else {
                     inspector.hashEntry(stream, ref.archiveEntryPath!!, algorithms, cancellation)
@@ -212,6 +216,21 @@ class LocalContentSource(
                 is ArchiveInspection.Inspected -> Outcome.success(inspection.entries)
                 is ArchiveInspection.Failed -> Outcome.failure(
                     RetroVaultFailure.ArchiveUnreadable(ref, inspection.failure.message),
+                )
+            }
+        }
+
+    override suspend fun readPrefix(ref: StorageRef, byteCount: Int): Outcome<ByteArray> =
+        withContext(dispatcher) {
+            try {
+                openStream(ref.toPath()).use { stream ->
+                    Outcome.success(stream.readNBytes(byteCount))
+                }
+            } catch (failure: NoSuchFileException) {
+                Outcome.failure(RetroVaultFailure.FileNotFound(ref))
+            } catch (failure: IOException) {
+                Outcome.failure(
+                    RetroVaultFailure.UnsupportedStorage(failure.message ?: "the file could not be read"),
                 )
             }
         }
@@ -313,6 +332,26 @@ class LocalRenameExecutor(
 }
 
 /** Bridges coroutine cancellation into the synchronous streaming code. */
+/**
+ * Skips exactly [count] bytes, or throws.
+ *
+ * `InputStream.skip` is permitted to skip fewer bytes than asked without
+ * explanation, and a short skip would silently hash from the wrong offset -
+ * producing a digest that matches nothing, for no visible reason.
+ */
+private fun java.io.InputStream.skipFully(count: Long) {
+    var remaining = count
+    while (remaining > 0) {
+        val skipped = skip(remaining)
+        if (skipped > 0) {
+            remaining -= skipped
+            continue
+        }
+        if (read() < 0) throw IOException("the file ended before its header did")
+        remaining--
+    }
+}
+
 private suspend fun coroutineCancellation(): CancellationSignal {
     val context = currentCoroutineContext()
     return CancellationSignal {

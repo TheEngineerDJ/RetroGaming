@@ -536,6 +536,27 @@ class ArtifactResolver(private val config: ResolverConfig = ResolverConfig()) {
 
         val records = groups.values.first()
         val candidate = buildExactCandidate(session, records, verifiedAlgorithms)
+        // A header the scanner skipped means the bytes that matched are not the
+        // whole file. The identity is verified either way; what changes is
+        // whether this file *is* the catalogued dump (Constitution section 200,
+        // section 306).
+        val header = session.observation.header
+        if (header != null) {
+            return complete(
+                session,
+                ResolutionState.MODIFIED_MATCH,
+                candidates = listOf(candidate),
+                selected = candidate,
+                pipelineEvidence = listOf(
+                    Evidence.informational(
+                        MatchSignal.RepresentationDiffers(header.kind.name),
+                        "This file carries ${header.kind.description} in front of the game data. The " +
+                            "game data itself matches the catalogued dump exactly; the file does not, " +
+                            "because preservation datasets record the dump without that header.",
+                    ),
+                ),
+            )
+        }
         val state = if (verifiedAlgorithms.size >= 2) {
             ResolutionState.EXACT_MULTI_HASH
         } else {

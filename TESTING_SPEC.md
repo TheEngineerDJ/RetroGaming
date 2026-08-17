@@ -258,3 +258,12 @@ The Android modules are excluded from the build when no SDK is present, so these
 **Wiring.** Every `com.retrovault.*` import in the Android sources resolves to a declaration the core still has; every port the app needs has an Android implementation; the composition root passes `applyCorrections`, `corrections` and `entities` into the scan — the arguments that are optional on the use case and therefore silent when forgotten.
 
 **SAF honesty.** `stat` reports a provider that returns no cursor, and a URI that cannot be addressed, as failures rather than as an observed absence.
+
+
+## Modified dumps
+
+**Detection.** iNES, FDS and Lynx headers are recognised by magic and not claimed without it; the Atari 7800 magic is matched at its offset; a SNES copier header is recognised from size alone and a headerless dump is left alone; a file that is only a header has no payload; an interleaved SMD dump is never claimed; an unreadable prefix yields no header rather than an assumed one; only magic formats cost a read.
+
+**Identification.** A headered ROM resolves to `MODIFIED_MATCH` against the catalogued payload with `VERIFIED_CONTENT` basis and an explanation naming the header; a headerless dump is still an exact match; a headered ROM is not renamed without review; opting in renames it in one pass and never rewrites its bytes.
+
+**Persistence.** An observation records the header it saw, and one scanned before headers were recognised records none.

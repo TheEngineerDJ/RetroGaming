@@ -57,6 +57,19 @@ data class AutomationPolicy(
      * has explicitly enabled that policy and no conflicting candidate exists.
      */
     val allowStructuralAutomation: Boolean = false,
+    /**
+     * Whether a dump whose payload matched once a header was skipped may be
+     * renamed without per-file confirmation.
+     *
+     * Off by default. The measurement is real - a cryptographic hash of the
+     * payload matched the catalogued digest - but the canonical name describes
+     * the dump the dataset holds, and this file is not that dump. Renaming it
+     * to that name is a small claim beyond what was measured, and Constitution
+     * section 263 puts a high-risk action on that footing behind review. A user
+     * normalising a headered library can turn it on once rather than confirming
+     * every file.
+     */
+    val allowHeaderedAutomation: Boolean = false,
     val riskLevel: RiskLevel = RiskLevel.R2,
 ) {
     fun decide(resolution: ArtifactResolution): AutomationDecision {
@@ -68,6 +81,17 @@ data class AutomationPolicy(
             ResolutionState.EXACT_HASH,
             ResolutionState.EXACT_MULTI_HASH,
             -> AutomationDecision.AUTOMATIC
+
+            // The payload was verified, so this is never forbidden. What is at
+            // stake is whether the *file* may be given the catalogued dump's
+            // name without the user seeing that a header was skipped to get
+            // there (Constitution section 200 and section 306).
+            ResolutionState.MODIFIED_MATCH ->
+                if (allowHeaderedAutomation) {
+                    AutomationDecision.AUTOMATIC
+                } else {
+                    AutomationDecision.REQUIRES_REVIEW
+                }
 
             ResolutionState.STRUCTURAL_MATCH ->
                 if (allowStructuralAutomation && resolution.candidates.size == 1) {

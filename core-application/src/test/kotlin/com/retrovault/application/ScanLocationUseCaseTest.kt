@@ -141,7 +141,10 @@ class ScanLocationUseCaseTest {
             }
         }
 
-        override suspend fun inspectArchive(ref: StorageRef): Outcome<List<ArchiveEntryObservation>> =
+        override suspend fun readPrefix(ref: StorageRef, byteCount: Int): Outcome<ByteArray> =
+        Outcome.success(ByteArray(0))
+
+    override suspend fun inspectArchive(ref: StorageRef): Outcome<List<ArchiveEntryObservation>> =
             Outcome.success(emptyList())
 
         override suspend fun stat(ref: StorageRef): Outcome<ArtifactState> =

@@ -86,6 +86,17 @@ interface ContentSource {
     /** Lists what a container holds, without extracting it. */
     suspend fun inspectArchive(ref: StorageRef): Outcome<List<ArchiveEntryObservation>>
 
+    /**
+     * Reads at most [byteCount] bytes from the start of a file.
+     *
+     * Exists so a copier or console header can be recognised before anything is
+     * hashed (Constitution section 200). Deliberately tiny and deliberately
+     * optional in effect: a failure here is reported, and the caller treats it
+     * as "no header found" rather than guessing, because a wrongly assumed
+     * header would shift every byte after it.
+     */
+    suspend fun readPrefix(ref: StorageRef, byteCount: Int): Outcome<ByteArray>
+
     /** Re-reads a file's current state, for staleness and permission checks. */
     suspend fun stat(ref: StorageRef): Outcome<ArtifactState>
 

@@ -21,7 +21,9 @@ import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
 import com.retrovault.domain.observation.ArchiveEntryObservation
+import com.retrovault.domain.observation.DetectedHeader
 import com.retrovault.domain.observation.FileObservation
+import com.retrovault.domain.observation.RomHeaderKind
 import com.retrovault.domain.resolution.ArtifactResolution
 import com.retrovault.domain.resolution.Candidate
 import com.retrovault.domain.resolution.ConfidenceLevel
@@ -169,8 +171,8 @@ class SqlObservationRepository(
         val observation = entry.observation
         database.execute(
             "INSERT OR REPLACE INTO file_observation (id, session_id, storage_ref, parent_ref, filename, " +
-                "relative_path, size, last_modified, container, observed_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "relative_path, size, last_modified, container, observed_at, header_kind) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             listOf(
                 observation.id.value,
                 observation.sessionId.value,
@@ -182,6 +184,7 @@ class SqlObservationRepository(
                 observation.lastModifiedEpochMillis,
                 observation.container.name,
                 observation.observedAtEpochMillis,
+                observation.header?.kind?.name,
             ),
         )
 
@@ -276,7 +279,7 @@ class SqlObservationRepository(
     private fun loadSession(id: ScanSessionId): List<ResolvedObservation> {
         val observations = database.query(
             "SELECT id, session_id, storage_ref, parent_ref, filename, relative_path, size, " +
-                "last_modified, container, observed_at FROM file_observation WHERE session_id = ? " +
+                "last_modified, container, observed_at, header_kind FROM file_observation WHERE session_id = ? " +
                 "ORDER BY relative_path, id",
             listOf(id.value),
         ) { row ->
@@ -291,6 +294,9 @@ class SqlObservationRepository(
                 lastModifiedEpochMillis = row.getLongOrNull(7),
                 container = runCatching { ContainerKind.valueOf(row.getString(8)) }
                     .getOrDefault(ContainerKind.RAW),
+                header = row.getStringOrNull(10)
+                    ?.let { name -> runCatching { RomHeaderKind.valueOf(name) }.getOrNull() }
+                    ?.let(::DetectedHeader),
                 observedAtEpochMillis = row.getLong(9),
             )
         }

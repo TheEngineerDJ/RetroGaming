@@ -421,6 +421,30 @@ class SchemaMigrationTest {
     }
 
     @Test
+    fun `upgrading from version 6 lets an observation record the header it saw`() {
+        Schema.migrateTo(database, 6)
+        database.execute(
+            "INSERT INTO scan_session (id, root_ref, root_display_name, started_at, dat_source_ids, " +
+                "naming_profile, resolver_version, cancelled) VALUES " +
+                "('s', 'file:///', 'Library', 1, '', 'no-intro@v1', 'v1', 0)",
+        )
+        database.execute(
+            "INSERT INTO file_observation (id, session_id, storage_ref, parent_ref, filename, " +
+                "relative_path, size, container, observed_at) VALUES " +
+                "('o', 's', 'file:///a.sfc', 'file:///', 'a.sfc', 'a.sfc', 4096, 'RAW', 1)",
+        )
+
+        Schema.migrate(database)
+
+        assertEquals(Schema.CURRENT_VERSION, Schema.versionOf(database))
+        assertEquals(1, countOf("file_observation"))
+        assertNull(
+            database.query("SELECT header_kind FROM file_observation") { it.getStringOrNull(0) }.single(),
+            "A file scanned before headers were recognised was not observed to have one",
+        )
+    }
+
+    @Test
     fun `a version 1 database reaches the current version in one pass`() {
         seedVersion1()
 

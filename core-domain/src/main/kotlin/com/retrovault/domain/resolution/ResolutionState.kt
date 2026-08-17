@@ -65,6 +65,23 @@ enum class ResolutionState {
      */
     STRUCTURAL_MATCH,
 
+    /**
+     * The content matched exactly once a representation difference was
+     * accounted for.
+     *
+     * Constitution section 306 requires **Modified** to be distinguishable:
+     * "artifact differs from a known reference but may retain useful identity
+     * evidence". A copier-headered dump is exactly that - the payload's
+     * cryptographic hash matches the catalogued dump, and the file as a whole
+     * is still not byte-identical to it.
+     *
+     * Kept apart from the exact states rather than folded into them. Both rest
+     * on a measurement, but only one of them describes a file a preservation
+     * dataset would accept, and telling a user their headered copy *is* the
+     * catalogued dump would be false in the way section 22 cares about.
+     */
+    MODIFIED_MATCH,
+
     /** Exact metadata agreement against a record that carries no hashes. */
     STRONG_METADATA_MATCH,
 
@@ -139,6 +156,9 @@ enum class ResolutionState {
     val identityBasis: IdentityBasis
         get() = when (this) {
             EXACT_HASH, EXACT_MULTI_HASH -> IdentityBasis.VERIFIED_CONTENT
+            // The bytes that carry identity *were* verified; the header is a
+            // fact about the file, not a gap in the measurement.
+            MODIFIED_MATCH -> IdentityBasis.VERIFIED_CONTENT
             STRUCTURAL_MATCH -> IdentityBasis.STRUCTURAL
             STRONG_METADATA_MATCH, FUZZY_MATCH -> IdentityBasis.INFERRED
             USER_CORRECTED -> IdentityBasis.USER_ASSERTED
@@ -156,6 +176,7 @@ enum class ResolutionState {
         get() = this in setOf(
             EXACT_HASH,
             EXACT_MULTI_HASH,
+            MODIFIED_MATCH,
             STRUCTURAL_MATCH,
             STRONG_METADATA_MATCH,
             FUZZY_MATCH,
@@ -180,6 +201,9 @@ enum class ConfidenceLevel {
     companion object {
         fun forState(state: ResolutionState): ConfidenceLevel = when (state) {
             ResolutionState.EXACT_HASH, ResolutionState.EXACT_MULTI_HASH -> EXACT
+            // Not EXACT: the file is not the catalogued dump, even though its
+            // payload is. Saying "exact" would overstate what was established.
+            ResolutionState.MODIFIED_MATCH -> STRONG
             ResolutionState.STRUCTURAL_MATCH -> STRONG
             ResolutionState.STRONG_METADATA_MATCH, ResolutionState.FUZZY_MATCH -> PROBABLE
             ResolutionState.AMBIGUOUS, ResolutionState.CONFLICT -> AMBIGUOUS

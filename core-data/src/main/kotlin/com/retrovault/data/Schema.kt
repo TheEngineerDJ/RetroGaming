@@ -16,7 +16,7 @@ import com.retrovault.domain.identity.MediaTypeVocabulary
  */
 object Schema {
 
-    const val CURRENT_VERSION: Int = 6
+    const val CURRENT_VERSION: Int = 7
 
     /**
      * Applies every migration needed to bring [database] up to date.
@@ -84,6 +84,7 @@ object Schema {
         4 to Migration(version4(), ::backfillReleaseIds),
         5 to Migration(version5()),
         6 to Migration(version6()),
+        7 to Migration(version7()),
     )
 
     /**
@@ -383,6 +384,19 @@ object Schema {
      */
     private fun version6(): List<String> = listOf(
         "ALTER TABLE rename_operation ADD COLUMN result_ref TEXT",
+    )
+
+    /**
+     * The header the scanner found in front of the game data.
+     *
+     * An observation is a record of what was seen (DOMAIN_MODEL.md section 24),
+     * and the header is part of that even though it is not part of what the
+     * file *contains*. Without it a reloaded observation would say the payload
+     * begins at byte zero, which is how a later read of the same file would
+     * quietly hash the wrong bytes.
+     */
+    private fun version7(): List<String> = listOf(
+        "ALTER TABLE file_observation ADD COLUMN header_kind TEXT",
     )
 
     /**

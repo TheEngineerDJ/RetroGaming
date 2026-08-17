@@ -267,6 +267,10 @@ class SafContentSource(
             openStream(ref.storageRef).use { stream ->
                 val entryPath = ref.archiveEntryPath
                 if (entryPath == null) {
+                    // A header is skipped before hashing so the digest is of
+                    // the dump the catalogue records, not of the file that
+                    // happens to contain it (Constitution section 200).
+                    stream.skipFully(ref.byteOffset)
                     StreamingHasher.hash(stream, algorithms, cancellation)
                 } else {
                     inspector.hashEntry(stream, entryPath, algorithms, cancellation)
@@ -309,6 +313,30 @@ class SafContentSource(
                 is ArchiveInspection.Inspected -> Outcome.success(inspection.entries)
                 is ArchiveInspection.Failed ->
                     Outcome.failure(RetroVaultFailure.ArchiveUnreadable(ref, inspection.failure.message))
+            }
+        }
+
+    override suspend fun readPrefix(ref: StorageRef, byteCount: Int): Outcome<ByteArray> =
+        withContext(dispatcher) {
+            try {
+                openStream(ref).use { stream ->
+                    val buffer = ByteArray(byteCount)
+                    var read = 0
+                    while (read < byteCount) {
+                        val count = stream.read(buffer, read, byteCount - read)
+                        if (count < 0) break
+                        read += count
+                    }
+                    Outcome.success(buffer.copyOf(read))
+                }
+            } catch (failure: FileNotFoundException) {
+                Outcome.failure(RetroVaultFailure.FileNotFound(ref))
+            } catch (failure: SecurityException) {
+                Outcome.failure(RetroVaultFailure.PermissionDenied(ref))
+            } catch (failure: IOException) {
+                Outcome.failure(
+                    RetroVaultFailure.UnsupportedStorage(failure.message ?: "the file could not be read"),
+                )
             }
         }
 
@@ -491,6 +519,27 @@ class SafRenameExecutor(
                 Outcome.failure(RetroVaultFailure.RenameFailed(ref, failure.message ?: "I/O error"))
             }
         }
+}
+
+/**
+ * Skips exactly [count] bytes, or throws.
+ *
+ * `InputStream.skip` may skip fewer bytes than asked without explanation, and a
+ * provider stream is more likely to do so than a local file. A short skip would
+ * hash from the wrong offset and produce a digest matching nothing, with no
+ * visible cause.
+ */
+private fun InputStream.skipFully(count: Long) {
+    var remaining = count
+    while (remaining > 0) {
+        val skipped = skip(remaining)
+        if (skipped > 0) {
+            remaining -= skipped
+            continue
+        }
+        if (read() < 0) throw IOException("the file ended before its header did")
+        remaining--
+    }
 }
 
 /** Bridges coroutine cancellation into the synchronous streaming code. */

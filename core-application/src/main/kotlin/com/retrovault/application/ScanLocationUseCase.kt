@@ -7,7 +7,9 @@ import com.retrovault.domain.evidence.MatchSignal
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.ScanSessionId
+import com.retrovault.domain.observation.DetectedHeader
 import com.retrovault.domain.observation.FileObservation
+import com.retrovault.domain.observation.RomHeaderDetector
 import com.retrovault.domain.resolution.ArtifactResolution
 import com.retrovault.domain.resolution.ArtifactResolver
 import com.retrovault.domain.resolution.ConfidenceLevel
@@ -255,6 +257,7 @@ class ScanLocationUseCase(
             lastModifiedEpochMillis = file.lastModifiedEpochMillis,
             container = container,
             archiveEntries = entries,
+            header = if (container == ContainerKind.RAW) detectHeader(file) else null,
             observedAtEpochMillis = clock.nowEpochMillis(),
         )
 
@@ -290,6 +293,39 @@ class ScanLocationUseCase(
         val graph = entities ?: return
         val record = resolution.selected?.record ?: return
         graph.save(EntityPromoter.promote(record))
+    }
+
+    /**
+     * Recognises a copier or console header in front of the game data.
+     *
+     * Constitution section 200: a difference of representation must not be
+     * rejected as a difference of identity. Without this, a headered dump is
+     * excluded by size filtering before any hash is computed and falls through
+     * to being identified by its filename - which for a large headered library
+     * means content identification effectively does not happen.
+     *
+     * The cheap test comes first. A SNES copier header is recognisable from the
+     * file size alone, so most headered files cost no extra read at all; only
+     * the magic-number formats need their first bytes, and only for the handful
+     * of extensions that can carry one.
+     */
+    private suspend fun detectHeader(file: DiscoveredFile): DetectedHeader? {
+        val extension = file.name.substringAfterLast('.', missingDelimiterValue = "")
+            .takeIf { it.isNotEmpty() }
+        if (!RomHeaderDetector.mayCarryHeader(extension)) return null
+
+        val prefix = if (RomHeaderDetector.needsPrefix(extension)) {
+            when (val read = contentSource.readPrefix(file.ref, RomHeaderDetector.PREFIX_BYTES)) {
+                is Outcome.Success -> read.value
+                // Could not look. Reported as no header rather than as a
+                // guessed one: assuming a header shifts every byte after it.
+                is Outcome.Failure -> return null
+            }
+        } else {
+            ByteArray(0)
+        }
+
+        return RomHeaderDetector.detect(extension, file.size, prefix)
     }
 
     private fun containerFor(filename: String): ContainerKind {

@@ -46,6 +46,7 @@ import com.retrovault.domain.identity.MediaType
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
 import com.retrovault.domain.rename.PlanIssue
+import com.retrovault.domain.policy.AutomationPolicy
 import com.retrovault.domain.rename.PlanVerdict
 import com.retrovault.domain.rename.PlannedAction
 import com.retrovault.domain.rename.RenameOperationState
@@ -1113,6 +1114,97 @@ class VerticalSliceEndToEndTest {
         val history = (useCase.history(observation.observation) as Outcome.Success).value
         assertEquals(1, history.size)
         assertEquals("wrong", history.single().reason)
+    }
+
+    // ------------------------------------------------------------------
+    // Headered dumps (Constitution section 200, section 306)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `a copier-headered rom is identified by its payload, not by its name`() = runTest {
+        // The most common thing in a real SNES library, and before headers were
+        // handled it fell straight through to filename matching: the size is
+        // 512 bytes off every catalogue record, so size filtering excluded
+        // everything before a single hash was computed.
+        val payload = payload(seed = 120, size = 4096)
+        val headered = ByteArray(512) { 0x55 } + payload
+        writeTwoGameDat(payload, payload(seed = 121))
+        writeFile("roms/junkname.sfc", headered)
+        importDat(root.resolve("test.dat"))
+
+        val resolution = resolutionsByName(scan().second).getValue("junkname.sfc")
+
+        assertEquals(ResolutionState.MODIFIED_MATCH, resolution.state)
+        assertEquals("Chrono Trigger", resolution.selected?.record?.canonicalTitle)
+        assertEquals(
+            IdentityBasis.VERIFIED_CONTENT,
+            resolution.identityBasis,
+            "The bytes that carry identity were measured; the header is a fact about the file",
+        )
+        assertTrue(
+            resolution.explanation.any { it.description.contains("copier header") },
+            "The user must be told why their file is not byte-identical to the catalogued dump",
+        )
+    }
+
+    @Test
+    fun `a headered rom is not renamed without review`() = runTest {
+        // The payload matched exactly, but the file is not the dump the
+        // catalogue holds, so giving it that dump's name is a claim slightly
+        // beyond the measurement (section 263).
+        val payload = payload(seed = 122, size = 4096)
+        writeTwoGameDat(payload, payload(seed = 123))
+        writeFile("roms/junkname.sfc", ByteArray(512) { 0x55 } + payload)
+        importDat(root.resolve("test.dat"))
+
+        val sessionId = scan().first
+        val plan = (
+            GenerateRenamePlanUseCase(observations, clock, ids).generate(sessionId) as Outcome.Success
+            ).value
+
+        assertEquals(PlannedAction.SKIP_REQUIRES_REVIEW, plan.entries.single().action)
+    }
+
+    @Test
+    fun `a user who opts in can normalise a headered library in one pass`() = runTest {
+        val payload = payload(seed = 124, size = 4096)
+        writeTwoGameDat(payload, payload(seed = 125))
+        writeFile("roms/junkname.sfc", ByteArray(512) { 0x55 } + payload)
+        importDat(root.resolve("test.dat"))
+
+        val sessionId = scan().first
+        val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+        val plan = (
+            GenerateRenamePlanUseCase(observations, clock, ids).generate(
+                sessionId,
+                policy = AutomationPolicy(allowHeaderedAutomation = true),
+            ) as Outcome.Success
+            ).value
+        val result = ExecuteRenamePlanUseCase(validate, LocalRenameExecutor(), journal, clock, ids)
+            .execute(plan)
+
+        assertTrue((result as Outcome.Success).value.summary.isFullySuccessful, result.value.summary.toString())
+        assertEquals(
+            listOf("Chrono Trigger (USA).sfc"),
+            root.resolve("roms").listDirectoryEntries().map { it.name },
+        )
+        // The header is untouched. Renaming never rewrites bytes, so the file
+        // is still the headered copy the user has - now under a name their
+        // frontend understands.
+        assertEquals(4608, root.resolve("roms/Chrono Trigger (USA).sfc").readBytes().size)
+    }
+
+    @Test
+    fun `a headerless dump is still an exact match`() = runTest {
+        // The header path must not change what happens to ordinary files.
+        val bytes = payload(seed = 126, size = 4096)
+        writeTwoGameDat(bytes, payload(seed = 127))
+        writeFile("roms/plain.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val resolution = resolutionsByName(scan().second).getValue("plain.sfc")
+
+        assertTrue(resolution.state.isExact)
     }
 
     // ------------------------------------------------------------------

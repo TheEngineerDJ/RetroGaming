@@ -299,6 +299,11 @@ private fun ResultsList(
                     },
                 )
                 row.identity?.let { Text("    Identified as: $it") }
+                // Section 306: "Modified" is its own state. A user must not be
+                // told their headered copy *is* the catalogued dump.
+                if (row.matchType == "MODIFIED_MATCH") {
+                    Text("    The game data matches, but this file has extra header bytes in front of it.")
+                }
                 row.reasons.take(MAX_REASONS).forEach { reason -> Text("    · $reason") }
                 if (row.candidates.size > 1) {
                     Text("    ${row.candidates.size} candidates remain; choose one to continue.")
