@@ -267,3 +267,18 @@ The Android modules are excluded from the build when no SDK is present, so these
 **Identification.** A headered ROM resolves to `MODIFIED_MATCH` against the catalogued payload with `VERIFIED_CONTENT` basis and an explanation naming the header; a headerless dump is still an exact match; a headered ROM is not renamed without review; opting in renames it in one pass and never rewrites its bytes.
 
 **Persistence.** An observation records the header it saw, and one scanned before headers were recognised records none.
+
+
+## Reviewing, history, undo and browsing
+
+**Review.** A subject carries every candidate with the evidence for and against it; choosing one records a correction naming its release, derived the same way the entity graph derives it; an identity that is not a candidate cannot be recorded; rejecting records that none is right; the previous claim survives; history shows superseded entries and labels each by the game it named rather than by the identifier it stored; withdrawing leaves the record; a file with no cryptographic hash cannot be corrected durably.
+
+**Undo.** Only renames that took effect can be put back; an interrupted rename nobody could explain never is, nor a dry run; a batch is reversed in the order it ran, backwards; a file that is gone, renamed by something else, of a different size, or whose original name is occupied is refused, as is an unreadable file or folder; one unsafe step blocks the whole reversal while still being shown; a case-only reversal stages through a third name; excluding a step revalidates the rest.
+
+**Undo end to end.** A completed rename is put back exactly; undoing is recorded rather than erasing what happened; a file changed since the rename is not put back; history is readable newest first and stops offering what has been restored.
+
+**Promotion.** Identical identities are written once per batch, not once per file; a graph failure is reported rather than discarded.
+
+**Search ranking.** An exact title outranks a longer title containing it; a result says whether it matched exactly, after normalization, through an alias or partially, and which text it hit; an exact alias outranks a partial title; equal matches fall back to title order deterministically.
+
+**Browsing.** Works list with the number of releases each actually has; opening one shows its releases, their cryptographic digests and every contributing dataset; a release with no recorded region says so; opening a work that is gone fails rather than showing an empty one.

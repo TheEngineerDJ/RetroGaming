@@ -107,6 +107,21 @@ fun RetroVaultApp(
             return@Scaffold
         }
 
+        if (state.libraryOpen) {
+            Column(modifier = column) {
+                LibrarySheet(
+                    query = state.librarySearch,
+                    works = state.libraryWorks,
+                    detail = state.openWork,
+                    onQueryChange = viewModel::onLibrarySearchChange,
+                    onOpenWork = viewModel::openWork,
+                    onCloseWork = viewModel::closeWork,
+                    onClose = viewModel::closeLibrary,
+                )
+            }
+            return@Scaffold
+        }
+
         if (state.historyOpen) {
             Column(modifier = column) {
                 HistorySheet(
@@ -150,6 +165,13 @@ fun RetroVaultApp(
                 ) {
                     Text("Preview rename")
                 }
+            }
+
+            OutlinedButton(
+                onClick = viewModel::openLibrary,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Browse your library")
             }
 
             OutlinedButton(

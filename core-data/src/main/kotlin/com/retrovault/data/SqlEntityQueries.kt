@@ -2,7 +2,9 @@ package com.retrovault.data
 
 import com.retrovault.application.CorrectionStore
 import com.retrovault.application.EntityPage
+import com.retrovault.application.EntityMatch
 import com.retrovault.application.EntityQueries
+import com.retrovault.application.MatchKind
 import com.retrovault.application.Outcome
 import com.retrovault.data.RecordMapper.splitList
 import com.retrovault.domain.catalog.DatSourceRef
@@ -59,22 +61,31 @@ class SqlEntityQueries(
 
     // ------------------------------------------------------------- platforms
 
-    override suspend fun platforms(query: String?, limit: Int): EntityPage<Platform> = read {
+    override suspend fun platforms(query: String?, limit: Int): EntityPage<EntityMatch<Platform>> = read {
         val bounded = bound(limit)
         val term = searchTerm(query)
-        val rows = if (term == null) {
-            database.query(
-                "$PLATFORM_COLUMNS FROM platform_entity ORDER BY name LIMIT ${bounded + 1}",
-            ) { it.toPlatform() }
-        } else {
-            database.query(
-                "$PLATFORM_COLUMNS FROM platform_entity " +
-                    "WHERE LOWER(name) LIKE ? ESCAPE '\\' OR LOWER(aliases) LIKE ? ESCAPE '\\' " +
-                    "ORDER BY name LIMIT ${bounded + 1}",
-                listOf(term, term),
-            ) { it.toPlatform() }
+        if (term == null) {
+            return@read EntityPage.of(
+                database.query(
+                    "$PLATFORM_COLUMNS FROM platform_entity ORDER BY name LIMIT ${bounded + 1}",
+                ) { it.toPlatform() }.map { EntityMatch(it, MatchKind.PARTIAL, it.name.value) },
+                bounded,
+            )
         }
-        EntityPage.of(rows, bounded)
+        // Fetched wider than the page, then ranked. Ranking has to happen over
+        // the matches rather than in SQL because the reason a row matched is
+        // not a column - it is a comparison between the query and several of
+        // them (Constitution section 213).
+        val rows = database.query(
+            "$PLATFORM_COLUMNS FROM platform_entity " +
+                "WHERE LOWER(name) LIKE ? ESCAPE '\\' OR LOWER(aliases) LIKE ? ESCAPE '\\' " +
+                "ORDER BY name LIMIT $RANKING_WINDOW",
+            listOf(term, term),
+        ) { it.toPlatform() }
+        val ranked = rows
+            .map { platform -> classify(query.orEmpty(), platform, platform.name.value, platform.aliases) }
+            .sortedWith(compareBy({ it.matchKind.ordinal }, { it.matchedOn.lowercase() }))
+        EntityPage.of(ranked, bounded)
     }
 
     override suspend fun findPlatform(id: PlatformId): Platform? = read {
@@ -91,36 +102,53 @@ class SqlEntityQueries(
      * lets "Legend of Zelda, The" find a work stored as "The Legend of Zelda"
      * without a second set of rules to keep in step.
      */
-    override suspend fun works(query: String?, platformId: PlatformId?, limit: Int): EntityPage<Work> =
-        read {
-            val bounded = bound(limit)
-            val conditions = mutableListOf<String>()
-            val arguments = mutableListOf<Any?>()
+    override suspend fun works(
+        query: String?,
+        platformId: PlatformId?,
+        limit: Int,
+    ): EntityPage<EntityMatch<Work>> = read {
+        val bounded = bound(limit)
+        val conditions = mutableListOf<String>()
+        val arguments = mutableListOf<Any?>()
+        val term = searchTerm(query)
 
-            searchTerm(query)?.let { term ->
-                conditions += "(LOWER(w.canonical_title) LIKE ? ESCAPE '\\' " +
-                    "OR LOWER(w.aliases) LIKE ? ESCAPE '\\' " +
-                    "OR w.normalized_title LIKE ? ESCAPE '\\')"
-                arguments += term
-                arguments += term
-                arguments += searchTerm(TitleNormalizer.normalize(query.orEmpty()).key) ?: term
-            }
-            platformId?.let {
-                conditions += "EXISTS (SELECT 1 FROM release_entity r " +
-                    "WHERE r.work_id = w.id AND r.platform_id = ?)"
-                arguments += it.value
-            }
+        term?.let {
+            conditions += "(LOWER(w.canonical_title) LIKE ? ESCAPE '\\' " +
+                "OR LOWER(w.aliases) LIKE ? ESCAPE '\\' " +
+                "OR w.normalized_title LIKE ? ESCAPE '\\')"
+            arguments += it
+            arguments += it
+            arguments += searchTerm(TitleNormalizer.normalize(query.orEmpty()).key) ?: it
+        }
+        platformId?.let {
+            conditions += "EXISTS (SELECT 1 FROM release_entity r " +
+                "WHERE r.work_id = w.id AND r.platform_id = ?)"
+            arguments += it.value
+        }
 
-            val where = if (conditions.isEmpty()) "" else "WHERE " + conditions.joinToString(" AND ")
-            EntityPage.of(
-                database.query(
-                    "$WORK_COLUMNS FROM work_entity w $where ORDER BY w.canonical_title, w.id " +
-                        "LIMIT ${bounded + 1}",
-                    arguments,
-                ) { it.toWork() },
+        val where = if (conditions.isEmpty()) "" else "WHERE " + conditions.joinToString(" AND ")
+        // Without a search term there is nothing to rank by, so the listing
+        // stays alphabetical and the page bound does the limiting. With one,
+        // a wider window is read and ranked, because how a row matched is a
+        // comparison rather than a column.
+        val readLimit = if (term == null) bounded + 1 else RANKING_WINDOW
+        val rows = database.query(
+            "$WORK_COLUMNS FROM work_entity w $where ORDER BY w.canonical_title, w.id LIMIT $readLimit",
+            arguments,
+        ) { it.toWork() }
+
+        if (term == null) {
+            return@read EntityPage.of(
+                rows.map { EntityMatch(it, MatchKind.PARTIAL, it.canonicalTitle) },
                 bounded,
             )
         }
+
+        val ranked = rows
+            .map { work -> classify(query.orEmpty(), work, work.canonicalTitle, work.aliases, work.normalizedTitle) }
+            .sortedWith(compareBy({ it.matchKind.ordinal }, { it.matchedOn.lowercase() }))
+        EntityPage.of(ranked, bounded)
+    }
 
     override suspend fun findWork(id: WorkId): Work? = read {
         database.queryOne("$WORK_COLUMNS FROM work_entity w WHERE w.id = ?", listOf(id.value)) {
@@ -294,6 +322,43 @@ class SqlEntityQueries(
                 )
         }
 
+    /**
+     * Decides *why* a row matched, which is what ranks it.
+     *
+     * Checked strongest first. An exact hit on the current name beats one that
+     * only agrees after normalization, which beats a name the entity is merely
+     * also known by, which beats a substring. Constitution section 212: identity
+     * relevance outranks raw text, so "Zelda" must not put *A Link to the Past*
+     * above *Zelda* on the strength of alphabetical order.
+     */
+    private fun <T> classify(
+        query: String,
+        entity: T,
+        name: String,
+        aliases: Set<String>,
+        normalized: NormalizedTitle? = null,
+    ): EntityMatch<T> {
+        val needle = query.trim()
+        if (name.equals(needle, ignoreCase = true)) {
+            return EntityMatch(entity, MatchKind.EXACT, name)
+        }
+        if (normalized != null && normalized.key == TitleNormalizer.normalize(needle).key) {
+            return EntityMatch(entity, MatchKind.NORMALIZED, name)
+        }
+        aliases.firstOrNull { it.equals(needle, ignoreCase = true) }?.let {
+            return EntityMatch(entity, MatchKind.ALIAS, it)
+        }
+        // A partial hit reports the alias it landed in when the name itself
+        // does not contain the query, so a user can see why it was returned.
+        val inName = name.contains(needle, ignoreCase = true)
+        val alias = aliases.firstOrNull { it.contains(needle, ignoreCase = true) }
+        return when {
+            inName -> EntityMatch(entity, MatchKind.PARTIAL, name)
+            alias != null -> EntityMatch(entity, MatchKind.ALIAS, alias)
+            else -> EntityMatch(entity, MatchKind.PARTIAL, name)
+        }
+    }
+
     // -------------------------------------------------------------- plumbing
 
     private fun withHashes(artifacts: List<Artifact>): List<Artifact> {
@@ -407,6 +472,15 @@ class SqlEntityQueries(
     private suspend fun <T> read(body: () -> T): T = withContext(dispatcher) { body() }
 
     private companion object {
+        /**
+         * How many rows are read before ranking.
+         *
+         * Ranking cannot be done in SQL, so a page's worth of rows is not
+         * enough - the best match may sort late alphabetically. The window is
+         * bounded because section 249 does not stop applying to a search.
+         */
+        const val RANKING_WINDOW = 500
+
         const val PLATFORM_COLUMNS = "SELECT id, name, provenance, aliases "
         const val WORK_COLUMNS =
             "SELECT w.id, w.canonical_title, w.normalized_title, w.provenance, w.aliases "

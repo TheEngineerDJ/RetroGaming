@@ -12,6 +12,11 @@ import com.retrovault.domain.identity.HashValue
 import com.retrovault.domain.identity.PlatformName
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
+import com.retrovault.domain.entity.EntityRelationship
+import com.retrovault.domain.entity.EntityRef
+import com.retrovault.domain.entity.PromotedIdentity
+import com.retrovault.domain.entity.Release
+import com.retrovault.domain.identity.ReleaseId
 import com.retrovault.domain.naming.NormalizedTitle
 import com.retrovault.domain.observation.ArchiveEntryObservation
 import com.retrovault.domain.observation.ArtifactContentRef
@@ -57,6 +62,9 @@ class ScanLocationUseCaseTest {
         size = size,
         hashes = HashDigests.of(HashValue.of(HashAlgorithm.CRC32, crc)),
     )
+
+    /** The CRC of the record used by the promotion tests, so a match is reached. */
+    private val matchingCrc = HashValue.of(HashAlgorithm.CRC32, "11111111")
 
     private fun file(name: String, size: Long = 1024) = DiscoveredFile(
         ref = StorageRef("mem:/roms/$name"),
@@ -283,12 +291,14 @@ class ScanLocationUseCaseTest {
         observations: ObservationRepository,
         sessions: ScanSessionRepository,
         config: ScanConfig = ScanConfig(),
+        entities: EntityGraph? = null,
     ): ScanLocationUseCase {
         var counter = 0
         return ScanLocationUseCase(
             walker = walker,
             contentSource = content,
             resolveArtifact = ResolveArtifactUseCase(catalog, content),
+            entities = entities,
             catalog = catalog,
             observations = observations,
             sessions = sessions,
@@ -493,5 +503,83 @@ class ScanLocationUseCaseTest {
             events.filterIsInstance<ScanEvent.FileResolved>()
                 .all { it.resolved.resolution.state == ResolutionState.NO_MATCH },
         )
+    }
+
+    /**
+     * Records what it was asked to save, and can be told to refuse.
+     *
+     * The refusal path is the point: a graph failure used to be discarded
+     * entirely, so a scan against a full disk reported success and left an
+     * empty graph.
+     */
+    private class RecordingGraph(private val failAfter: Int = Int.MAX_VALUE) : EntityGraph {
+        val saved = mutableListOf<PromotedIdentity>()
+
+        override suspend fun save(identity: PromotedIdentity): Outcome<Unit> {
+            if (saved.size >= failAfter) {
+                return Outcome.failure(RetroVaultFailure.PersistenceFailure("disk full"))
+            }
+            saved += identity
+            return Outcome.success(Unit)
+        }
+
+        override suspend fun findRelease(id: ReleaseId): Outcome<Release?> = Outcome.success(null)
+
+        override suspend fun recordsForRelease(id: ReleaseId): List<DumpRecord> = emptyList()
+
+        override suspend fun relationshipsFrom(ref: EntityRef): Outcome<List<EntityRelationship>> =
+            Outcome.success(emptyList())
+
+        override suspend fun relate(relationship: EntityRelationship): Outcome<Unit> = Outcome.success(Unit)
+    }
+
+    @Test
+    fun `identical identities are written to the graph once per batch, not once per file`() = runTest {
+        // Every file in this fixture is the same record, so the graph should
+        // see one identity rather than one per file.
+        val walker = FakeWalker((1..8).map { WalkEvent.FileFound(file("game$it.sfc")) })
+        val graph = RecordingGraph()
+        val matching = (1..8).associate { "game$it.sfc" to HashDigests.of(matchingCrc) }
+
+        useCase(
+            walker = walker,
+            content = CountingContentSource(matching),
+            catalog = FakeCatalog(listOf(record("Game (USA)", size = 1024, crc = "11111111"))),
+            observations = RecordingObservations(),
+            sessions = RecordingSessions(),
+            config = ScanConfig(concurrency = 1, persistBatchSize = 8),
+            entities = graph,
+        ).scan(location).toList()
+
+        assertTrue(graph.saved.isNotEmpty(), "The scan must project what it identified")
+        assertEquals(
+            graph.saved.size,
+            graph.saved.distinctBy { it.artifact.id.value }.size,
+            "A batch that promotes the same identity repeatedly wastes a write transaction per file",
+        )
+    }
+
+    @Test
+    fun `a graph failure is reported rather than discarded`() = runTest {
+        val walker = FakeWalker((1..4).map { WalkEvent.FileFound(file("game$it.sfc")) })
+        val graph = RecordingGraph(failAfter = 0)
+        val matching = (1..4).associate { "game$it.sfc" to HashDigests.of(matchingCrc) }
+
+        val events = useCase(
+            walker = walker,
+            content = CountingContentSource(matching),
+            catalog = FakeCatalog(listOf(record("Game (USA)", size = 1024, crc = "11111111"))),
+            observations = RecordingObservations(),
+            sessions = RecordingSessions(),
+            config = ScanConfig(concurrency = 1, persistBatchSize = 2),
+            entities = graph,
+        ).scan(location).toList()
+
+        val finished = events.filterIsInstance<ScanEvent.SessionFinished>().single()
+        assertNotNull(
+            finished.graphFailure,
+            "Section 250: a graph that could not be written is data, not silence",
+        )
+        assertNull(finished.persistenceFailure, "The scan's own results persisted fine")
     }
 }

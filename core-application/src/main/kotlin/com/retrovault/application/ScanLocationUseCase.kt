@@ -3,6 +3,7 @@ package com.retrovault.application
 import com.retrovault.domain.catalog.CatalogueCoverage
 import com.retrovault.domain.correction.CorrectionSet
 import com.retrovault.domain.entity.EntityPromoter
+import com.retrovault.domain.entity.PromotedIdentity
 import com.retrovault.domain.evidence.MatchSignal
 import com.retrovault.domain.identity.ContainerKind
 import com.retrovault.domain.identity.ObservationId
@@ -45,6 +46,16 @@ sealed interface ScanEvent {
         val summary: ScanSummary,
         val cancelled: Boolean,
         val persistenceFailure: RetroVaultFailure? = null,
+        /**
+         * The entity graph could not record what the scan identified.
+         *
+         * Kept apart from [persistenceFailure] because the two mean different
+         * things to a user. Observations failing to persist costs them their
+         * scan; the graph failing costs them a projection that a rescan
+         * rebuilds. Reporting it at all is the point - Constitution section 250
+         * makes failure data, and this one used to be discarded entirely.
+         */
+        val graphFailure: RetroVaultFailure? = null,
     ) : ScanEvent
 }
 
@@ -158,21 +169,30 @@ class ScanLocationUseCase(
 
         val tally = Tally()
         val buffer = PersistBuffer(observations, config.persistBatchSize)
+        val promotions = entities?.let { PromotionBuffer(it, config.persistBatchSize) }
         var cancelled = true
 
         try {
-            runWorkers(root, sessionId, tally, buffer, coverage, activeCorrections)
+            runWorkers(root, sessionId, tally, buffer, promotions, coverage, activeCorrections)
             cancelled = false
         } finally {
             // The session must be closed out even when the collector walked
             // away mid-scan, so persisted state never claims a scan is running.
-            val flushFailure = withContext(NonCancellable) {
+            val outcome = withContext(NonCancellable) {
                 val failure = buffer.flush()
+                val graphFailure = promotions?.flush()
                 sessions.finish(sessionId, tally.snapshot(), cancelled)
-                failure
+                failure to graphFailure
             }
             withContext(NonCancellable) {
-                send(ScanEvent.SessionFinished(tally.snapshot(), cancelled, flushFailure))
+                send(
+                    ScanEvent.SessionFinished(
+                        summary = tally.snapshot(),
+                        cancelled = cancelled,
+                        persistenceFailure = outcome.first,
+                        graphFailure = outcome.second,
+                    ),
+                )
             }
         }
     }
@@ -183,6 +203,7 @@ class ScanLocationUseCase(
         sessionId: ScanSessionId,
         tally: Tally,
         buffer: PersistBuffer,
+        promotions: PromotionBuffer?,
         coverage: CatalogueCoverage,
         activeCorrections: CorrectionSet,
     ) {
@@ -214,7 +235,7 @@ class ScanLocationUseCase(
         val workers = List(config.concurrency) {
             launch {
                 for (file in work) {
-                    process(file, sessionId, tally, buffer, coverage, activeCorrections)
+                    process(file, sessionId, tally, buffer, promotions, coverage, activeCorrections)
                 }
             }
         }
@@ -229,6 +250,7 @@ class ScanLocationUseCase(
         sessionId: ScanSessionId,
         tally: Tally,
         buffer: PersistBuffer,
+        promotions: PromotionBuffer?,
         coverage: CatalogueCoverage,
         activeCorrections: CorrectionSet,
     ) {
@@ -272,7 +294,7 @@ class ScanLocationUseCase(
         // is looked up is what lets an override find its file at all.
         val observed = observation.withIdentityBearingHashes(automatic.hashes)
         val resolution = applyCorrections?.apply(automatic, observed, activeCorrections) ?: automatic
-        promote(resolution)
+        promote(resolution, promotions)
         val resolved = ResolvedObservation(observed, resolution)
         tally.resolved(resolution)
         buffer.add(resolved)
@@ -284,15 +306,11 @@ class ScanLocationUseCase(
      *
      * Only ever runs for a resolution that selected a record, because promoting
      * an identity RetroVault did not establish would put a proposal into the
-     * graph as though it were a finding. A failure here is deliberately not
-     * reported: the graph is a projection of catalogue evidence and can be
-     * rebuilt by rescanning, so it must not be able to fail a scan whose real
-     * output - the observations and their resolutions - persisted fine.
+     * graph as though it were a finding.
      */
-    private suspend fun promote(resolution: ArtifactResolution) {
-        val graph = entities ?: return
+    private suspend fun promote(resolution: ArtifactResolution, buffer: PromotionBuffer?) {
         val record = resolution.selected?.record ?: return
-        graph.save(EntityPromoter.promote(record))
+        buffer?.add(EntityPromoter.promote(record))
     }
 
     /**
@@ -452,5 +470,61 @@ private class PersistBuffer(
     private suspend fun write(batch: List<ResolvedObservation>) {
         val failure = (repository.saveAll(batch) as? Outcome.Failure)?.failure ?: return
         mutex.withLock { if (firstFailure == null) firstFailure = failure }
+    }
+}
+
+/**
+ * Records what a scan identified into the entity graph, in batches.
+ *
+ * Promotion used to run per file, inside each concurrent worker: a
+ * read-modify-write transaction across four tables and three edges for every
+ * artifact, so scanning ten thousand files meant ten thousand write
+ * transactions and rewrote the same platform row every time. Observations were
+ * already batched for exactly this reason; the unbatched write beside them
+ * defeated it.
+ *
+ * Identities are deduplicated within a batch before writing. A folder of one
+ * platform's games promotes that platform once rather than once per file, which
+ * is where most of the saving is.
+ */
+private class PromotionBuffer(
+    private val graph: EntityGraph,
+    private val batchSize: Int,
+) {
+    private val mutex = Mutex()
+    private val pending = mutableListOf<PromotedIdentity>()
+
+    /**
+     * The first write that failed.
+     *
+     * Previously discarded on the reasoning that the graph is a rebuildable
+     * projection. That is true of a transient failure and wrong about a
+     * persistent one: a full disk produced a silently empty graph with nothing
+     * anywhere saying so.
+     */
+    private var firstFailure: RetroVaultFailure? = null
+
+    suspend fun add(identity: PromotedIdentity) {
+        val batch = mutex.withLock {
+            pending.add(identity)
+            if (pending.size >= batchSize) pending.toList().also { pending.clear() } else null
+        }
+        batch?.let { write(it) }
+    }
+
+    /** @return the first failure of the whole scan, or `null` if the graph is complete. */
+    suspend fun flush(): RetroVaultFailure? {
+        val batch = mutex.withLock { pending.toList().also { pending.clear() } }
+        if (batch.isNotEmpty()) write(batch)
+        return mutex.withLock { firstFailure }
+    }
+
+    private suspend fun write(batch: List<PromotedIdentity>) {
+        // Promotion is idempotent, so duplicates are harmless - they are simply
+        // wasted transactions, and a scan produces a great many of them.
+        batch.distinctBy { it.artifact.id.value }.forEach { identity ->
+            val failure = (graph.save(identity) as? Outcome.Failure)?.failure ?: return@forEach
+            mutex.withLock { if (firstFailure == null) firstFailure = failure }
+        }
     }
 }

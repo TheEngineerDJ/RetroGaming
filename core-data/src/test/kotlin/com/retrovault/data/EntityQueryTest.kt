@@ -2,6 +2,7 @@ package com.retrovault.data
 
 import com.retrovault.application.Clock
 import com.retrovault.application.EntityPage
+import com.retrovault.application.MatchKind
 import com.retrovault.application.Outcome
 import com.retrovault.data.jdbc.JdbcSqlDatabase
 import com.retrovault.domain.catalog.DatSourceRef
@@ -185,6 +186,81 @@ class EntityQueryTest {
     }
 
     @Test
+    fun `an exact title outranks a longer title that merely contains it`() = runTest {
+        // Section 212: identity relevance outranks raw text. Alphabetical order
+        // would put "A Link to the Past" first purely because "A" sorts early.
+        promote("Zelda (USA)", id = "a")
+        promote("A Link to the Past - Zelda (USA)", sha1 = "b".repeat(40), id = "b")
+
+        val results = queries.works(query = "Zelda")
+
+        assertEquals("Zelda", results.items.first().entity.canonicalTitle)
+        assertEquals(MatchKind.EXACT, results.items.first().matchKind)
+        assertEquals(MatchKind.PARTIAL, results.items.last().matchKind)
+    }
+
+    @Test
+    fun `a result says why it matched`() = runTest {
+        // Section 213: a result found through an alias must be distinguishable
+        // from one whose title the user typed exactly.
+        val promoted = promote("The Legend of Zelda (USA)")
+        database.execute(
+            "UPDATE work_entity SET aliases = ? WHERE id = ?",
+            listOf("Zeruda no Densetsu", promoted.work.id.value),
+        )
+
+        val byAlias = queries.works(query = "Zeruda no Densetsu").items.single()
+        assertEquals(MatchKind.ALIAS, byAlias.matchKind)
+        assertEquals("Zeruda no Densetsu", byAlias.matchedOn, "The user sees which name they hit")
+
+        val byNormalized = queries.works(query = "Legend of Zelda, The").items.single()
+        assertEquals(MatchKind.NORMALIZED, byNormalized.matchKind)
+
+        val byExact = queries.works(query = "The Legend of Zelda").items.single()
+        assertEquals(MatchKind.EXACT, byExact.matchKind)
+    }
+
+    @Test
+    fun `an exact alias outranks a partial title hit`() = runTest {
+        val alias = promote("Something Else (USA)", id = "a")
+        database.execute(
+            "UPDATE work_entity SET aliases = ? WHERE id = ?",
+            listOf("Metroid", alias.work.id.value),
+        )
+        promote("Super Metroid Deluxe (USA)", sha1 = "b".repeat(40), id = "b")
+
+        val results = queries.works(query = "Metroid")
+
+        assertEquals(MatchKind.ALIAS, results.items.first().matchKind)
+        assertEquals("Something Else", results.items.first().entity.canonicalTitle)
+    }
+
+    @Test
+    fun `ranking is deterministic when two results match the same way`() = runTest {
+        promote("Metroid Two (USA)", id = "a")
+        promote("Metroid One (USA)", sha1 = "b".repeat(40), id = "b")
+
+        val first = queries.works(query = "Metroid").items.map { it.entity.canonicalTitle }
+        val second = queries.works(query = "Metroid").items.map { it.entity.canonicalTitle }
+
+        assertEquals(first, second)
+        assertEquals(listOf("Metroid One", "Metroid Two"), first, "Equal matches fall back to title order")
+    }
+
+    @Test
+    fun `a platform search reports how it matched`() = runTest {
+        val promoted = promote("Some Game (USA)")
+        database.execute(
+            "UPDATE platform_entity SET aliases = ? WHERE id = ?",
+            listOf("SNES", promoted.platform.id.value),
+        )
+
+        assertEquals(MatchKind.ALIAS, queries.platforms(query = "SNES").items.single().matchKind)
+        assertEquals(MatchKind.EXACT, queries.platforms(query = "Test Console").items.single().matchKind)
+        assertEquals(MatchKind.PARTIAL, queries.platforms(query = "Test Con").items.single().matchKind)
+    }
+
+    @Test
     fun `works can be narrowed to one platform`() = runTest {
         val console = promote("Shared Title (USA)", id = "a", platform = "Test Console")
         promote("Other Title (USA)", sha1 = "b".repeat(40), id = "b", platform = "Other Console")
@@ -193,7 +269,7 @@ class EntityQueryTest {
         val narrowed = queries.works(platformId = console.platform.id)
 
         assertEquals(2, all.size)
-        assertEquals(listOf(console.work.id), narrowed.items.map { it.id })
+        assertEquals(listOf(console.work.id), narrowed.items.map { it.entity.id })
     }
 
     @Test
@@ -203,7 +279,7 @@ class EntityQueryTest {
 
         val narrowed = queries.works(query = "shared", platformId = other.platform.id)
 
-        assertEquals(listOf(other.work.id), narrowed.items.map { it.id })
+        assertEquals(listOf(other.work.id), narrowed.items.map { it.entity.id })
     }
 
     @Test
@@ -547,6 +623,70 @@ class EntityQueryTest {
             assertNotNull(queries.provenanceOf(promoted.work.entityRef)).timestamps.lastUpdatedAtEpochMillis,
             "A skipped write is not an update",
         )
+    }
+
+    // ------------------------------------------------------------------
+    // Browsing the library
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `browsing lists works with the number of releases each actually has`() = runTest {
+        promote("Some Game (USA)", id = "a")
+        promote("Some Game (Europe)", sha1 = "b".repeat(40), id = "b")
+        promote("Other Game (USA)", sha1 = "c".repeat(40), id = "c")
+
+        val browse = com.retrovault.application.BrowseLibraryUseCase(queries)
+        val works = assertIs<Outcome.Success<List<com.retrovault.application.WorkSummary>>>(
+            browse.works(),
+        ).value
+
+        assertEquals(2, works.size)
+        assertEquals(2, works.single { it.title == "Some Game" }.releaseCount)
+        assertEquals(1, works.single { it.title == "Other Game" }.releaseCount)
+    }
+
+    @Test
+    fun `opening a work shows its releases, digests and where they came from`() = runTest {
+        val noIntro = record("Some Game (USA)", id = "a")
+        val fromRedump = record("Some Game (USA)", id = "b", from = redump)
+        importReady(noIntro)
+        importReady(fromRedump, from = redump)
+        val promoted = EntityPromoter.promote(noIntro)
+        graph.save(promoted)
+
+        val browse = com.retrovault.application.BrowseLibraryUseCase(queries)
+        val detail = assertIs<Outcome.Success<com.retrovault.application.WorkDetail>>(
+            browse.work(promoted.work.id),
+        ).value
+
+        assertEquals("Some Game", detail.title)
+        val release = detail.releases.single()
+        assertEquals(1, release.artifactCount)
+        assertTrue(
+            release.artifactDigests.single().startsWith("SHA1 "),
+            "A digest is the one thing a user can take elsewhere and check",
+        )
+        assertEquals(2, detail.independentSourceCount, "Section 196: every contributing dataset is named")
+        assertEquals(setOf("no_intro: Test Console", "redump: Test Console"), detail.sources.toSet())
+    }
+
+    @Test
+    fun `a release with no recorded region says so rather than inventing one`() = runTest {
+        val promoted = promote("Some Game")
+
+        val browse = com.retrovault.application.BrowseLibraryUseCase(queries)
+        val detail = assertIs<Outcome.Success<com.retrovault.application.WorkDetail>>(
+            browse.work(promoted.work.id),
+        ).value
+
+        assertEquals("no region recorded", detail.releases.single().label)
+    }
+
+    @Test
+    fun `opening a work that is gone fails rather than showing an empty one`() = runTest {
+        val browse = com.retrovault.application.BrowseLibraryUseCase(queries)
+
+        assertIs<Outcome.Failure>(browse.work(WorkId("nothing-here")))
     }
 
     // ------------------------------------------------------------------

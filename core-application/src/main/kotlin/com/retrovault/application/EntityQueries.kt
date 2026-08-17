@@ -46,6 +46,39 @@ data class EntityPage<T>(
 }
 
 /**
+ * Why a result matched.
+ *
+ * Constitution section 213 requires search to distinguish exact, alias and
+ * fuzzy matches rather than returning one undifferentiated list. Without it a
+ * result found through a name the entity used to carry is indistinguishable
+ * from one whose title the user typed exactly - and a user cannot tell whether
+ * the thing they were looking for is the thing they found.
+ *
+ * Ordered strongest first, which is also the ranking order.
+ */
+enum class MatchKind {
+    /** The query is exactly the entity's current name. */
+    EXACT,
+
+    /** The query normalizes to the entity's title, e.g. "Zelda, The" for "The Zelda". */
+    NORMALIZED,
+
+    /** The query matched a name the entity is also, or used to be, known by. */
+    ALIAS,
+
+    /** The query appears somewhere within the name. */
+    PARTIAL,
+}
+
+/** One result, with the reason it is a result (Constitution section 213). */
+data class EntityMatch<T>(
+    val entity: T,
+    val matchKind: MatchKind,
+    /** The text that matched, so a user can see *why* an alias hit was returned. */
+    val matchedOn: String,
+)
+
+/**
  * Reading the canonical entity graph.
  *
  * Separate from [EntityGraph], which writes it. The split is not ceremony: a
@@ -70,7 +103,7 @@ interface EntityQueries {
     suspend fun platforms(
         query: String? = null,
         limit: Int = EntityPage.DEFAULT_LIMIT,
-    ): EntityPage<Platform>
+    ): EntityPage<EntityMatch<Platform>>
 
     suspend fun findPlatform(id: PlatformId): Platform?
 
@@ -81,12 +114,17 @@ interface EntityQueries {
      * is included so a search for "Legend of Zelda, The" finds the work stored
      * as "The Legend of Zelda" - the same normalization the resolver uses,
      * reused rather than reimplemented.
+     *
+     * Ranked by how the match was made, not alphabetically. Constitution
+     * section 212 requires identity relevance to outrank raw text: searching
+     * "Zelda" must not put *A Link to the Past* above *Zelda* because "A" sorts
+     * first. Ties are broken by title so the order is still deterministic.
      */
     suspend fun works(
         query: String? = null,
         platformId: PlatformId? = null,
         limit: Int = EntityPage.DEFAULT_LIMIT,
-    ): EntityPage<Work>
+    ): EntityPage<EntityMatch<Work>>
 
     suspend fun findWork(id: WorkId): Work?
 

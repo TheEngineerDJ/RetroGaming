@@ -7,6 +7,8 @@ import com.retrovault.application.Outcome
 import com.retrovault.application.RenameHistoryEntry
 import com.retrovault.application.RenamePreview
 import com.retrovault.application.ReviewSubject
+import com.retrovault.application.WorkDetail
+import com.retrovault.application.WorkSummary
 import com.retrovault.application.ResolvedObservation
 import com.retrovault.application.ScanEvent
 import com.retrovault.application.ScanSummary
@@ -16,6 +18,7 @@ import com.retrovault.domain.identity.ObservationId
 import com.retrovault.domain.identity.RenameBatchId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
+import com.retrovault.domain.identity.WorkId
 import com.retrovault.domain.policy.AutomationDecision
 import com.retrovault.domain.rename.PlanVerdict
 import com.retrovault.domain.rename.RenamePlan
@@ -77,6 +80,10 @@ data class ScannerUiState(
     val reviewBusy: Boolean = false,
     val history: List<HistoryRow> = emptyList(),
     val historyOpen: Boolean = false,
+    val libraryOpen: Boolean = false,
+    val librarySearch: String = "",
+    val libraryWorks: List<WorkSummary> = emptyList(),
+    val openWork: WorkDetail? = null,
 ) {
     val canScan: Boolean get() = rootDisplayName != null && phase != WorkflowPhase.SCANNING
     val canPreview: Boolean get() = phase == WorkflowPhase.SCANNED || phase == WorkflowPhase.PREVIEWING
@@ -295,6 +302,46 @@ class ScannerViewModel(private val container: RetroVaultContainer) : ViewModel()
         }
     }
 
+    // ------------------------------------------------------------------
+    // Browsing the library (Constitution section 137)
+    // ------------------------------------------------------------------
+
+    fun openLibrary() {
+        _state.update { it.copy(libraryOpen = true, openWork = null) }
+        refreshLibrary(_state.value.librarySearch)
+    }
+
+    fun closeLibrary() = _state.update { it.copy(libraryOpen = false, openWork = null) }
+
+    fun onLibrarySearchChange(query: String) {
+        _state.update { it.copy(librarySearch = query) }
+        refreshLibrary(query)
+    }
+
+    fun openWork(id: WorkId) {
+        viewModelScope.launch {
+            when (val outcome = container.browseLibrary.work(id)) {
+                is Outcome.Success -> _state.update { it.copy(openWork = outcome.value) }
+                is Outcome.Failure -> _state.update {
+                    it.copy(notices = it.notices + outcome.failure.message)
+                }
+            }
+        }
+    }
+
+    fun closeWork() = _state.update { it.copy(openWork = null) }
+
+    private fun refreshLibrary(query: String) {
+        viewModelScope.launch {
+            when (val outcome = container.browseLibrary.works(query.takeIf { it.isNotBlank() })) {
+                is Outcome.Success -> _state.update { it.copy(libraryWorks = outcome.value) }
+                is Outcome.Failure -> _state.update {
+                    it.copy(notices = it.notices + outcome.failure.message)
+                }
+            }
+        }
+    }
+
     private fun RenameHistoryEntry.toRow(): HistoryRow {
         val summary = batch.summary()
         return HistoryRow(
@@ -419,6 +466,14 @@ class ScannerViewModel(private val container: RetroVaultContainer) : ViewModel()
                         listOfNotNull(
                             if (event.cancelled) "Scan cancelled. Results so far were kept." else null,
                             event.persistenceFailure?.message,
+                            // Distinct from a persistence failure: the scan's
+                            // own results are fine and a rescan rebuilds the
+                            // graph, so the wording says so rather than
+                            // alarming the user about their scan.
+                            event.graphFailure?.let {
+                                "Your scan results were saved, but the game library could not be updated: " +
+                                    "${it.message} Scanning again will rebuild it."
+                            },
                         ),
                 )
             }

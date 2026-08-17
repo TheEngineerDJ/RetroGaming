@@ -155,6 +155,7 @@ class AndroidWiringTest {
 
         listOf(
             "reviewObservation" to "correcting a file",
+            "browseLibrary" to "browsing the entity graph",
             "renameHistory" to "reading the rename history",
             "undoRenames" to "putting a rename batch back",
         ).forEach { (capability, description) ->

@@ -2,6 +2,7 @@ package com.retrovault.app
 
 import android.content.Context
 import com.retrovault.application.ApplyCorrectionsUseCase
+import com.retrovault.application.BrowseLibraryUseCase
 import com.retrovault.application.Clock
 import com.retrovault.application.ExecuteRenamePlanUseCase
 import com.retrovault.application.GenerateRenamePlanUseCase
@@ -64,8 +65,10 @@ class RetroVaultContainer(context: Context) {
     /** Persisted Storage Access Framework grants (SECURITY_SPEC.md section 4). */
     val permissions = SafPermissions(applicationContext)
 
-    /** Reading the canonical entity graph a scan projects into. */
-    val entityQueries = SqlEntityQueries(database, corrections)
+    private val entityQueries = SqlEntityQueries(database, corrections)
+
+    /** Browsing the canonical entity graph a scan projects into. */
+    val browseLibrary = BrowseLibraryUseCase(entityQueries)
 
     private val recordCorrection = RecordCorrectionUseCase(corrections, clock, ids)
 
