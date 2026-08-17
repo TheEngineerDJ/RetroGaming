@@ -20,6 +20,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -86,8 +87,39 @@ fun RetroVaultApp(
     }
 
     Scaffold { padding ->
+        val review = state.review
+        val column = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+
+        // One thing at a time. Reviewing a file is a decision about that file,
+        // and leaving the whole scan on screen behind it invites the user to
+        // act on a list that their own decision is about to change.
+        if (review != null) {
+            Column(modifier = column) {
+                ReviewSheet(
+                    subject = review,
+                    busy = state.reviewBusy,
+                    onCorrectTo = viewModel::correctTo,
+                    onReject = viewModel::rejectIdentity,
+                    onWithdraw = viewModel::withdrawCorrection,
+                    onClose = viewModel::closeReview,
+                )
+            }
+            return@Scaffold
+        }
+
+        if (state.historyOpen) {
+            Column(modifier = column) {
+                HistorySheet(
+                    history = state.history,
+                    onUndo = viewModel::undoBatch,
+                    onClose = viewModel::closeHistory,
+                )
+            }
+            return@Scaffold
+        }
+
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            modifier = column,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             SetupSection(
@@ -120,10 +152,18 @@ fun RetroVaultApp(
                 }
             }
 
+            OutlinedButton(
+                onClick = viewModel::openHistory,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("What RetroVault has renamed")
+            }
+
             ResultsList(
                 results = state.results,
                 confirmed = state.confirmed,
                 onToggle = viewModel::toggleConfirmation,
+                onReview = viewModel::openReview,
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -244,6 +284,7 @@ private fun ResultsList(
     results: List<ResultRow>,
     confirmed: Set<com.retrovault.domain.identity.ObservationId>,
     onToggle: (com.retrovault.domain.identity.ObservationId) -> Unit,
+    onReview: (com.retrovault.domain.identity.ObservationId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -261,6 +302,13 @@ private fun ResultsList(
                 row.reasons.take(MAX_REASONS).forEach { reason -> Text("    · $reason") }
                 if (row.candidates.size > 1) {
                     Text("    ${row.candidates.size} candidates remain; choose one to continue.")
+                }
+                // Offered on every row, not only ambiguous ones. Section 218:
+                // a user may disagree with an exact hash match too, and the
+                // strength of RetroVault's evidence is not a reason to make
+                // saying so harder.
+                TextButton(onClick = { onReview(row.observationId) }) {
+                    Text("This is wrong / what is this?")
                 }
                 if (row.reviewable) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {

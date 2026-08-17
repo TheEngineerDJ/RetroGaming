@@ -4,12 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.retrovault.application.DatInput
 import com.retrovault.application.Outcome
+import com.retrovault.application.RenameHistoryEntry
 import com.retrovault.application.RenamePreview
+import com.retrovault.application.ReviewSubject
 import com.retrovault.application.ResolvedObservation
 import com.retrovault.application.ScanEvent
 import com.retrovault.application.ScanSummary
 import com.retrovault.application.StorageLocation
+import com.retrovault.domain.identity.DumpRecordId
 import com.retrovault.domain.identity.ObservationId
+import com.retrovault.domain.identity.RenameBatchId
 import com.retrovault.domain.identity.ScanSessionId
 import com.retrovault.domain.identity.StorageRef
 import com.retrovault.domain.policy.AutomationDecision
@@ -44,6 +48,19 @@ data class ResultRow(
     val reviewable: Boolean,
 )
 
+/** One rename batch, ready to display in the history. */
+data class HistoryRow(
+    val batchId: RenameBatchId,
+    val createdAtEpochMillis: Long,
+    val planned: Int,
+    val completed: Int,
+    val failed: Int,
+    val restored: Int,
+    val dryRun: Boolean,
+    val undoable: Boolean,
+    val renames: List<String>,
+)
+
 data class ScannerUiState(
     val rootDisplayName: String? = null,
     val importedDatSets: List<String> = emptyList(),
@@ -55,6 +72,11 @@ data class ScannerUiState(
     val preview: RenamePreview? = null,
     val executionReport: String? = null,
     val notices: List<String> = emptyList(),
+    /** The file currently open for review, if any. */
+    val review: ReviewSubject? = null,
+    val reviewBusy: Boolean = false,
+    val history: List<HistoryRow> = emptyList(),
+    val historyOpen: Boolean = false,
 ) {
     val canScan: Boolean get() = rootDisplayName != null && phase != WorkflowPhase.SCANNING
     val canPreview: Boolean get() = phase == WorkflowPhase.SCANNED || phase == WorkflowPhase.PREVIEWING
@@ -151,6 +173,141 @@ class ScannerViewModel(private val container: RetroVaultContainer) : ViewModel()
     /** Cooperative: the flow is cancelled and the session is closed out safely. */
     fun cancelScan() {
         scanJob?.cancel()
+    }
+
+    // ------------------------------------------------------------------
+    // Reviewing one file (Constitution section 218)
+    // ------------------------------------------------------------------
+
+    fun openReview(observationId: ObservationId) {
+        val session = sessionId ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(reviewBusy = true) }
+            when (val outcome = container.reviewObservation.subject(session, observationId)) {
+                is Outcome.Success -> _state.update { it.copy(review = outcome.value, reviewBusy = false) }
+                is Outcome.Failure -> _state.update {
+                    it.copy(reviewBusy = false, notices = it.notices + outcome.failure.message)
+                }
+            }
+        }
+    }
+
+    fun closeReview() = _state.update { it.copy(review = null) }
+
+    /** Records that the file is the release one of its candidates describes. */
+    fun correctTo(recordId: DumpRecordId, reason: String?) =
+        applyDecision { session, observationId ->
+            container.reviewObservation.correctToCandidate(session, observationId, recordId, reason)
+        }
+
+    /** Records that none of the candidates is right. */
+    fun rejectIdentity(reason: String?) =
+        applyDecision { session, observationId ->
+            container.reviewObservation.reject(session, observationId, reason)
+        }
+
+    fun withdrawCorrection() =
+        applyDecision { session, observationId ->
+            container.reviewObservation.withdraw(session, observationId)
+        }
+
+    /**
+     * Runs one decision and refreshes what the screen shows.
+     *
+     * A correction changes what a rescan will conclude, not what the current
+     * scan concluded - the results on screen were produced before the user
+     * disagreed. Saying so is more honest than silently re-labelling a row and
+     * implying RetroVault re-identified anything.
+     */
+    private fun applyDecision(
+        decision: suspend (ScanSessionId, ObservationId) -> Outcome<*>,
+    ) {
+        val session = sessionId ?: return
+        val observationId = _state.value.review?.observationId ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(reviewBusy = true) }
+            when (val outcome = decision(session, observationId)) {
+                is Outcome.Success -> {
+                    val refreshed = container.reviewObservation.subject(session, observationId)
+                    _state.update { current ->
+                        current.copy(
+                            reviewBusy = false,
+                            review = (refreshed as? Outcome.Success)?.value ?: current.review,
+                            notices = current.notices +
+                                "Saved. Scan again to identify this file with your correction applied.",
+                        )
+                    }
+                }
+
+                is Outcome.Failure -> _state.update {
+                    it.copy(reviewBusy = false, notices = it.notices + outcome.failure.message)
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // History and undo (Constitution section 170 and section 233)
+    // ------------------------------------------------------------------
+
+    fun openHistory() {
+        viewModelScope.launch {
+            when (val outcome = container.renameHistory.recent()) {
+                is Outcome.Success -> _state.update { current ->
+                    current.copy(historyOpen = true, history = outcome.value.map { it.toRow() })
+                }
+
+                is Outcome.Failure -> _state.update {
+                    it.copy(notices = it.notices + outcome.failure.message)
+                }
+            }
+        }
+    }
+
+    fun closeHistory() = _state.update { it.copy(historyOpen = false) }
+
+    /** Puts a batch back, or explains precisely why it will not. */
+    fun undoBatch(batchId: RenameBatchId) {
+        viewModelScope.launch {
+            _state.update { it.copy(currentActivity = "Putting files back") }
+            when (val outcome = container.undoRenames.undo(batchId)) {
+                is Outcome.Success -> {
+                    val result = outcome.value
+                    val message = when {
+                        result.isFullySuccessful ->
+                            "Put ${result.restored} file(s) back to the names they had before."
+
+                        result.plan.hasNothingToDo -> "That batch has nothing left to put back."
+
+                        // Every refusal is named. Section 250: failure is data,
+                        // and "it did not work" is not data.
+                        else -> "Nothing was changed. " +
+                            result.plan.issues.joinToString(" ") { it.message }
+                    }
+                    _state.update { it.copy(currentActivity = "", notices = it.notices + message) }
+                    openHistory()
+                }
+
+                is Outcome.Failure -> _state.update {
+                    it.copy(currentActivity = "", notices = it.notices + outcome.failure.message)
+                }
+            }
+        }
+    }
+
+    private fun RenameHistoryEntry.toRow(): HistoryRow {
+        val summary = batch.summary()
+        return HistoryRow(
+            batchId = batch.id,
+            createdAtEpochMillis = batch.createdAtEpochMillis,
+            planned = summary.planned,
+            completed = summary.completed,
+            failed = summary.failed,
+            restored = restoredCount,
+            dryRun = batch.dryRun,
+            undoable = undoable,
+            renames = batch.operations.map { "${it.sourceName}  ->  ${it.destinationName}" },
+        )
     }
 
     fun toggleConfirmation(observationId: ObservationId) {

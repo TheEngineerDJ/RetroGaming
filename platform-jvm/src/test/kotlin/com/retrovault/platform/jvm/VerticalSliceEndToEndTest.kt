@@ -3,6 +3,8 @@ package com.retrovault.platform.jvm
 import com.retrovault.application.Clock
 import com.retrovault.application.DatInput
 import com.retrovault.application.ExecuteRenamePlanUseCase
+import com.retrovault.application.ListRenameHistoryUseCase
+import com.retrovault.application.UndoRenameBatchUseCase
 import com.retrovault.application.GenerateRenamePlanUseCase
 import com.retrovault.application.IdGenerator
 import com.retrovault.application.ImportDatUseCase
@@ -1111,6 +1113,119 @@ class VerticalSliceEndToEndTest {
         val history = (useCase.history(observation.observation) as Outcome.Success).value
         assertEquals(1, history.size)
         assertEquals("wrong", history.single().reason)
+    }
+
+    // ------------------------------------------------------------------
+    // Undoing a rename batch
+    // ------------------------------------------------------------------
+
+    /** Scans, plans and renames one identified file, returning the batch. */
+    private suspend fun renameOneFile(seed: Int): com.retrovault.domain.rename.RenameBatch {
+        val bytes = payload(seed = seed)
+        writeTwoGameDat(bytes, payload(seed = seed + 1))
+        writeFile("roms/mystery.sfc", bytes)
+        importDat(root.resolve("test.dat"))
+
+        val sessionId = scan().first
+        val validate = ValidateRenamePlanUseCase(LocalContentSource(), clock)
+        val plan = (
+            GenerateRenamePlanUseCase(observations, clock, ids).generate(sessionId) as Outcome.Success
+            ).value
+        val result = ExecuteRenamePlanUseCase(validate, LocalRenameExecutor(), journal, clock, ids)
+            .execute(plan)
+        assertTrue((result as Outcome.Success).value.summary.isFullySuccessful, result.value.summary.toString())
+        return result.value.batch
+    }
+
+    private fun undoUseCase() =
+        UndoRenameBatchUseCase(journal, LocalContentSource(), LocalRenameExecutor(), clock)
+
+    @Test
+    fun `a completed rename can be put back exactly as it was`() = runTest {
+        val batch = renameOneFile(seed = 91)
+        assertEquals(
+            listOf("Chrono Trigger (USA).sfc"),
+            root.resolve("roms").listDirectoryEntries().map { it.name },
+        )
+
+        val undone = (undoUseCase().undo(batch.id) as Outcome.Success).value
+
+        assertTrue(undone.isFullySuccessful, undone.plan.issues.toString())
+        assertEquals(1, undone.restored)
+        assertEquals(
+            listOf("mystery.sfc"),
+            root.resolve("roms").listDirectoryEntries().map { it.name },
+            "Constitution section 170: the journal exists so this is possible",
+        )
+    }
+
+    @Test
+    fun `undoing is recorded in the journal rather than erasing what happened`() = runTest {
+        val batch = renameOneFile(seed = 93)
+
+        undoUseCase().undo(batch.id)
+
+        // Section 69: never silently rewrite history. The operation still says
+        // what RetroVault did and to what; only its outcome changed.
+        val stored = (journal.findBatch(batch.id) as Outcome.Success).value.operations.single()
+        assertEquals(RenameOperationState.RECONCILED_NOT_APPLIED, stored.state)
+        assertEquals("mystery.sfc", stored.sourceName)
+        assertEquals("Chrono Trigger (USA).sfc", stored.destinationName)
+        assertTrue(stored.identityDescription.isNotBlank())
+    }
+
+    @Test
+    fun `a file changed since the rename is not put back`() = runTest {
+        val batch = renameOneFile(seed = 95)
+        // The user edited the file after RetroVault renamed it. Undoing would
+        // give different content the old name.
+        root.resolve("roms/Chrono Trigger (USA).sfc").writeBytes(payload(seed = 96, size = 8192))
+
+        val undone = (undoUseCase().undo(batch.id) as Outcome.Success).value
+
+        assertFalse(undone.isFullySuccessful)
+        assertEquals(0, undone.restored, "Nothing is touched when anything is unsafe")
+        assertEquals(
+            com.retrovault.domain.rename.UndoRefusal.CONTENT_CHANGED,
+            undone.plan.issues.single().refusal,
+        )
+        assertEquals(
+            listOf("Chrono Trigger (USA).sfc"),
+            root.resolve("roms").listDirectoryEntries().map { it.name },
+        )
+    }
+
+    @Test
+    fun `undoing refuses when the original name is occupied again`() = runTest {
+        val batch = renameOneFile(seed = 97)
+        // Something else now holds the name the file would go back to.
+        writeFile("roms/mystery.sfc", payload(seed = 98))
+
+        val undone = (undoUseCase().undo(batch.id) as Outcome.Success).value
+
+        assertFalse(undone.isFullySuccessful)
+        assertEquals(
+            com.retrovault.domain.rename.UndoRefusal.ORIGINAL_NAME_TAKEN,
+            undone.plan.issues.single().refusal,
+        )
+        assertEquals(2, root.resolve("roms").listDirectoryEntries().size, "Neither file was touched")
+    }
+
+    @Test
+    fun `rename history is readable newest first and reports what can be put back`() = runTest {
+        val batch = renameOneFile(seed = 99)
+
+        val history = (ListRenameHistoryUseCase(journal).recent() as Outcome.Success).value
+
+        assertEquals(1, history.size)
+        assertEquals(batch.id, history.single().batch.id)
+        assertTrue(history.single().undoable)
+
+        undoUseCase().undo(batch.id)
+
+        val after = (ListRenameHistoryUseCase(journal).recent() as Outcome.Success).value.single()
+        assertFalse(after.undoable, "Once put back there is nothing left to put back")
+        assertEquals(1, after.restoredCount)
     }
 
     private fun releaseIdOf(setName: String): String =

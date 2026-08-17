@@ -7,11 +7,14 @@ import com.retrovault.application.ExecuteRenamePlanUseCase
 import com.retrovault.application.GenerateRenamePlanUseCase
 import com.retrovault.application.IdGenerator
 import com.retrovault.application.ImportDatUseCase
+import com.retrovault.application.ListRenameHistoryUseCase
 import com.retrovault.application.PreviewRenamePlanUseCase
 import com.retrovault.application.ReconcileInterruptedRenamesUseCase
 import com.retrovault.application.RecordCorrectionUseCase
 import com.retrovault.application.ResolveArtifactUseCase
+import com.retrovault.application.ReviewObservationUseCase
 import com.retrovault.application.ScanLocationUseCase
+import com.retrovault.application.UndoRenameBatchUseCase
 import com.retrovault.application.ValidateRenamePlanUseCase
 import com.retrovault.dat.LogiqxDatReader
 import com.retrovault.data.SqlCorrectionStore
@@ -64,7 +67,10 @@ class RetroVaultContainer(context: Context) {
     /** Reading the canonical entity graph a scan projects into. */
     val entityQueries = SqlEntityQueries(database, corrections)
 
-    val recordCorrection = RecordCorrectionUseCase(corrections, clock, ids)
+    private val recordCorrection = RecordCorrectionUseCase(corrections, clock, ids)
+
+    /** Reviewing one file and recording what the user decides about it. */
+    val reviewObservation = ReviewObservationUseCase(observations, recordCorrection)
 
     val importDat = ImportDatUseCase(
         reader = LogiqxDatReader(AndroidDatByteSource(applicationContext)),
@@ -119,5 +125,9 @@ class RetroVaultContainer(context: Context) {
     val reconcileInterruptedRenames =
         ReconcileInterruptedRenamesUseCase(journal, contentSource, clock)
 
-    val renameJournal = journal
+    /** The audit trail, read back (Constitution section 233). */
+    val renameHistory = ListRenameHistoryUseCase(journal)
+
+    /** Putting a batch back, which is the other half of section 170. */
+    val undoRenames = UndoRenameBatchUseCase(journal, contentSource, renameExecutor, clock)
 }

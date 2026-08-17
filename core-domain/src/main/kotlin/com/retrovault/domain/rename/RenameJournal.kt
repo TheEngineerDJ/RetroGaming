@@ -129,6 +129,18 @@ data class RenameOperation(
     val preconditionSize: Long,
     val preconditionHash: HashValue?,
     val state: RenameOperationState,
+    /**
+     * Where the rename left the file, when it succeeded.
+     *
+     * Not derivable from [sourceRef]. A `DocumentsContract` rename can return a
+     * new document URI whose id has nothing to do with the old one, so without
+     * recording it there is no way to address the file afterwards - and a
+     * journal that cannot address what it renamed cannot reverse it
+     * (Constitution section 170). `null` for an operation that has not
+     * succeeded, and for one reconciled from the filesystem, where RetroVault
+     * inferred the outcome rather than being handed a ref.
+     */
+    val resultRef: StorageRef? = null,
     val failure: RenameFailure? = null,
     val plannedAtEpochMillis: Long,
     val startedAtEpochMillis: Long? = null,
@@ -137,8 +149,15 @@ data class RenameOperation(
     fun markExecuting(atEpochMillis: Long): RenameOperation =
         copy(state = RenameOperationState.EXECUTING, startedAtEpochMillis = atEpochMillis)
 
-    fun markCompleted(atEpochMillis: Long): RenameOperation =
-        copy(state = RenameOperationState.COMPLETED, finishedAtEpochMillis = atEpochMillis, failure = null)
+    fun markCompleted(atEpochMillis: Long, resultRef: StorageRef? = null): RenameOperation = copy(
+        state = RenameOperationState.COMPLETED,
+        finishedAtEpochMillis = atEpochMillis,
+        resultRef = resultRef,
+        failure = null,
+    )
+
+    /** Where the file is now, as best the journal knows. */
+    val currentRef: StorageRef get() = resultRef ?: sourceRef
 
     fun markFailed(failure: RenameFailure, atEpochMillis: Long): RenameOperation =
         copy(state = RenameOperationState.FAILED, finishedAtEpochMillis = atEpochMillis, failure = failure)

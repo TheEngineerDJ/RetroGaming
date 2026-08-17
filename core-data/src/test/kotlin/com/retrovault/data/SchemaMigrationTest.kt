@@ -396,6 +396,31 @@ class SchemaMigrationTest {
     }
 
     @Test
+    fun `upgrading from version 5 lets the journal say where a rename left a file`() {
+        Schema.migrateTo(database, 5)
+        database.execute(
+            "INSERT INTO rename_batch (id, plan_id, session_id, naming_profile, policy_version, " +
+                "dry_run, created_at) VALUES ('b', 'p', 's', 'no-intro@v1', 'automation-policy-v1', 0, 1)",
+        )
+        database.execute(
+            "INSERT INTO rename_operation (id, batch_id, plan_entry_id, source_ref, directory_ref, " +
+                "source_name, destination_name, resolution_state, confidence, identity_description, " +
+                "naming_profile, precondition_size, state, planned_at) VALUES " +
+                "('o', 'b', 'e', 'file:///a', 'file:///', 'a.sfc', 'B.sfc', 'EXACT_HASH', 'EXACT', " +
+                "'some game', 'no-intro@v1', 4096, 'COMPLETED', 1)",
+        )
+
+        Schema.migrate(database)
+
+        assertEquals(Schema.CURRENT_VERSION, Schema.versionOf(database))
+        assertEquals(1, countOf("rename_operation"), "The upgrade must keep the operations already recorded")
+        assertNull(
+            database.query("SELECT result_ref FROM rename_operation") { it.getStringOrNull(0) }.single(),
+            "A rename recorded before this column existed was never handed a ref, and one must not be invented",
+        )
+    }
+
+    @Test
     fun `a version 1 database reaches the current version in one pass`() {
         seedVersion1()
 

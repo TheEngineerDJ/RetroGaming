@@ -248,6 +248,16 @@ interface RenameJournalRepository {
 
     /** Batches with operations that never reached a terminal state. */
     suspend fun findUnfinishedBatches(): Outcome<List<RenameBatch>>
+
+    /**
+     * Recent batches, newest first, for the history a user can read.
+     *
+     * Bounded: Constitution section 249 requires memory to stay bounded, and a
+     * library renamed weekly for a year is a lot of batches. A journal nobody
+     * can read is only half of section 170, so this is what makes the audit
+     * trail reachable rather than merely stored.
+     */
+    suspend fun findRecentBatches(limit: Int = 50): Outcome<List<RenameBatch>>
 }
 
 /** Time, injected so results are reproducible in tests. */

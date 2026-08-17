@@ -141,6 +141,54 @@ class AndroidWiringTest {
     }
 
     /**
+     * The knowledge layer has a way in.
+     *
+     * Every use case below existed, was tested, and was reachable by nobody:
+     * the app could scan and rename and nothing else. A capability wired into
+     * the container but referenced by no screen is not a feature, and this is
+     * the check that says so.
+     */
+    @Test
+    fun `the screens reach the corrections, history and undo the core provides`() {
+        val ui = androidSources.filter { it.path.contains("/app/") }.joinToString("\n") { it.readText() }
+        assertTrue(ui.isNotBlank(), "No app sources were found")
+
+        listOf(
+            "reviewObservation" to "correcting a file",
+            "renameHistory" to "reading the rename history",
+            "undoRenames" to "putting a rename batch back",
+        ).forEach { (capability, description) ->
+            assertTrue(
+                ui.contains("container.$capability"),
+                "Nothing in the UI reaches '$capability', so $description is built but unreachable",
+            )
+        }
+    }
+
+    /**
+     * The one promise the UI made and could not keep.
+     *
+     * The reconciliation notice told the user to consult a history screen that
+     * did not exist. For a product whose premise is trustworthiness, pointing
+     * at absent evidence right after mutating files is the worst kind of bug,
+     * so the claim and the screen are checked together.
+     */
+    @Test
+    fun `a message that points the user at history is backed by a history screen`() {
+        val ui = androidSources.filter { it.path.contains("/app/") }
+        val mentionsHistory = ui.any { file ->
+            file.readText().contains("See history", ignoreCase = true)
+        }
+        val hasHistoryScreen = ui.any { it.name == "HistorySheet.kt" } &&
+            ui.any { it.readText().contains("HistorySheet(") }
+
+        assertTrue(
+            !mentionsHistory || hasHistoryScreen,
+            "The UI tells the user to see history, so a history screen has to exist",
+        )
+    }
+
+    /**
      * The argument list of one call, to its matching close parenthesis.
      *
      * Nested calls mean the first `)` is usually not the end of the list.

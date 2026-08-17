@@ -16,7 +16,7 @@ import com.retrovault.domain.identity.MediaTypeVocabulary
  */
 object Schema {
 
-    const val CURRENT_VERSION: Int = 5
+    const val CURRENT_VERSION: Int = 6
 
     /**
      * Applies every migration needed to bring [database] up to date.
@@ -83,6 +83,7 @@ object Schema {
         3 to Migration(version3()),
         4 to Migration(version4(), ::backfillReleaseIds),
         5 to Migration(version5()),
+        6 to Migration(version6()),
     )
 
     /**
@@ -367,6 +368,21 @@ object Schema {
 
         "CREATE INDEX idx_rename_operation_batch ON rename_operation(batch_id)",
         "CREATE INDEX idx_rename_operation_state ON rename_operation(state)",
+    )
+
+    /**
+     * Where a rename left the file.
+     *
+     * A `DocumentsContract` rename can hand back a document URI unrelated to
+     * the one it was given, so without this the journal can name what it
+     * renamed but cannot address it afterwards - and an unaddressable rename
+     * cannot be reversed (Constitution section 170). Nullable because an
+     * operation that failed, was skipped, or was reconciled from the
+     * filesystem was never handed a ref, and inventing one would be a claim
+     * about where a file is.
+     */
+    private fun version6(): List<String> = listOf(
+        "ALTER TABLE rename_operation ADD COLUMN result_ref TEXT",
     )
 
     /**

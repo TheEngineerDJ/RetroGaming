@@ -83,13 +83,27 @@ class SqlRenameJournalRepository(
         }
     }
 
+    override suspend fun findRecentBatches(limit: Int): Outcome<List<RenameBatch>> =
+        withContext(dispatcher) {
+            try {
+                val bounded = limit.coerceIn(1, MAX_HISTORY)
+                val ids = database.query(
+                    "SELECT id FROM rename_batch ORDER BY created_at DESC, id DESC LIMIT ?",
+                    listOf(bounded.toLong()),
+                ) { row -> RenameBatchId(row.getString(0)) }
+                Outcome.success(ids.mapNotNull { loadBatch(it) })
+            } catch (failure: SqlFailure) {
+                Outcome.failure(RetroVaultFailure.PersistenceFailure(failure.message ?: "SQL failure"))
+            }
+        }
+
     private fun upsertOperation(operation: RenameOperation) {
         database.execute(
             "INSERT OR REPLACE INTO rename_operation (id, batch_id, plan_entry_id, source_ref, " +
                 "directory_ref, source_name, destination_name, intermediate_name, resolution_state, confidence, " +
                 "identity_description, naming_profile, precondition_size, precondition_hash_algorithm, " +
                 "precondition_hash_digest, state, failure_code, failure_detail, planned_at, started_at, " +
-                "finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "finished_at, result_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             listOf(
                 operation.id.value,
                 operation.batchId.value,
@@ -113,6 +127,7 @@ class SqlRenameJournalRepository(
                 operation.plannedAtEpochMillis,
                 operation.startedAtEpochMillis,
                 operation.finishedAtEpochMillis,
+                operation.resultRef?.value,
             ),
         )
     }
@@ -140,7 +155,7 @@ class SqlRenameJournalRepository(
                 "destination_name, intermediate_name, resolution_state, confidence, identity_description, " +
                 "naming_profile, " +
                 "precondition_size, precondition_hash_algorithm, precondition_hash_digest, state, " +
-                "failure_code, failure_detail, planned_at, started_at, finished_at " +
+                "failure_code, failure_detail, planned_at, started_at, finished_at, result_ref " +
                 "FROM rename_operation WHERE batch_id = ? ORDER BY planned_at, id",
             listOf(id.value),
         ) { row -> row.toOperation() }
@@ -180,6 +195,7 @@ class SqlRenameJournalRepository(
             plannedAtEpochMillis = getLong(18),
             startedAtEpochMillis = getLongOrNull(19),
             finishedAtEpochMillis = getLongOrNull(20),
+            resultRef = getStringOrNull(21)?.let(::StorageRef),
         )
     }
 
@@ -189,5 +205,10 @@ class SqlRenameJournalRepository(
         } catch (failure: SqlFailure) {
             Outcome.failure(RetroVaultFailure.PersistenceFailure(failure.message ?: "SQL failure"))
         }
+    }
+
+    private companion object {
+        /** Section 249: a ceiling a caller cannot raise, not a suggestion. */
+        const val MAX_HISTORY = 500
     }
 }

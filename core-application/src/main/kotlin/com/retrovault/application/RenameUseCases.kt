@@ -238,7 +238,7 @@ class ExecuteRenamePlanUseCase(
 
                 val result = performRename(executing)
                 val finished = when (result) {
-                    is Outcome.Success -> executing.markCompleted(clock.nowEpochMillis())
+                    is Outcome.Success -> executing.markCompleted(clock.nowEpochMillis(), result.value)
                     is Outcome.Failure -> executing.markFailed(
                         toRenameFailure(result.failure),
                         clock.nowEpochMillis(),
