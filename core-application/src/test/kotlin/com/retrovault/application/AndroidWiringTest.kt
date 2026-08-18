@@ -202,6 +202,35 @@ class AndroidWiringTest {
     }
 
     /**
+     * Every destination has a screen, and the shell reaches it.
+     *
+     * The compiler already forces the `when` over destinations to be
+     * exhaustive; what it cannot notice is a screen file that exists, compiles,
+     * and is called from nowhere - which is precisely how the entity graph came
+     * to be written by every scan and read by nobody.
+     */
+    @Test
+    fun `the shell reaches every screen it is built from`() {
+        val ui = repoRoot.resolve("app/src/main/kotlin/com/retrovault/app/ui")
+        assertTrue(ui.isDirectory, "The UI package is missing at $ui")
+        val shell = ui.resolve("RetroVaultApp.kt")
+        assertTrue(shell.isFile, "The navigation shell is missing")
+        val shellSource = shell.readText()
+
+        listOf("LibraryScreen", "FilesScreen", "ActivityScreen", "SetupScreen", "ReviewSheet")
+            .forEach { screen ->
+                assertTrue(
+                    ui.resolve("$screen.kt").isFile,
+                    "$screen.kt is missing",
+                )
+                assertTrue(
+                    shellSource.contains("$screen("),
+                    "Nothing calls $screen, so it is a screen the user cannot reach",
+                )
+            }
+    }
+
+    /**
      * The one promise the UI made and could not keep.
      *
      * The reconciliation notice told the user to consult a history screen that
@@ -215,8 +244,8 @@ class AndroidWiringTest {
         val mentionsHistory = ui.any { file ->
             file.readText().contains("See history", ignoreCase = true)
         }
-        val hasHistoryScreen = ui.any { it.name == "HistorySheet.kt" } &&
-            ui.any { it.readText().contains("HistorySheet(") }
+        val hasHistoryScreen = ui.any { it.name == "ActivityScreen.kt" } &&
+            ui.any { it.readText().contains("ActivityScreen(") }
 
         assertTrue(
             !mentionsHistory || hasHistoryScreen,

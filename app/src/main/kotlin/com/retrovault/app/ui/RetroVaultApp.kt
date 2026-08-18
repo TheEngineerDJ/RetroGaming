@@ -4,46 +4,40 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.retrovault.app.ResultRow
-import com.retrovault.app.ScannerUiState
+import com.retrovault.app.Destination
 import com.retrovault.app.ScannerViewModel
-import com.retrovault.app.WorkflowPhase
-import com.retrovault.app.describe
 import com.retrovault.domain.identity.StorageRef
-import com.retrovault.domain.resolution.ConfidenceLevel
 
 /**
- * The whole initial workflow, in one screen.
+ * RetroVault, as a product rather than a workflow.
  *
- * UX_SPEC.md section 18 scopes the first Android UI to folder selection, scan
- * configuration, progressive results, match inspection, batch preview, safe
- * execution and history. Nothing here decides identity: every label comes from
- * a domain decision.
+ * The library leads. Constitution section 137 asks the first release to prove
+ * RetroVault can represent entities, connect them, search them and explain
+ * evidence - so what a user opens into is what it knows, not the machinery
+ * that produced it. Setup stays one tap away and stops being the first thing
+ * they see the moment it is done.
+ *
+ * Four destinations and no deeper stack than a detail view. A file is reviewed
+ * over the top of wherever the user was, because reviewing is a decision about
+ * one file rather than a place to be.
  */
 @Composable
 fun RetroVaultApp(
@@ -59,8 +53,6 @@ fun RetroVaultApp(
         // RetroVault cannot keep access to would scan once and then leave any
         // interrupted rename unrecoverable, so it is not adopted at all.
         if (uri != null && onPersistFolderPermission(uri)) {
-            // The tree URI is turned into a document URI so that the scanner
-            // and the rename executor address the folder the same way.
             val documentUri = DocumentsContract.buildDocumentUriUsingTree(
                 uri,
                 DocumentsContract.getTreeDocumentId(uri),
@@ -86,15 +78,23 @@ fun RetroVaultApp(
         }
     }
 
-    Scaffold { padding ->
-        val review = state.review
-        val column = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+    val review = state.review
 
-        // One thing at a time. Reviewing a file is a decision about that file,
-        // and leaving the whole scan on screen behind it invites the user to
-        // act on a list that their own decision is about to change.
-        if (review != null) {
-            Column(modifier = column) {
+    Scaffold(
+        bottomBar = {
+            // Hidden while reviewing: the sheet is a decision about one file
+            // and moving away mid-decision loses it.
+            if (review == null) {
+                RetroVaultNavigationBar(
+                    current = state.destination,
+                    attentionCount = state.needingAttention,
+                    onSelect = viewModel::navigate,
+                )
+            }
+        },
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (review != null) {
                 ReviewSheet(
                     subject = review,
                     busy = state.reviewBusy,
@@ -103,279 +103,91 @@ fun RetroVaultApp(
                     onWithdraw = viewModel::withdrawCorrection,
                     onClose = viewModel::closeReview,
                 )
+                return@Box
             }
-            return@Scaffold
-        }
 
-        if (state.libraryOpen) {
-            Column(modifier = column) {
-                LibrarySheet(
-                    query = state.librarySearch,
-                    works = state.libraryWorks,
-                    detail = state.openWork,
+            when (state.destination) {
+                Destination.LIBRARY -> LibraryScreen(
+                    state = state,
                     onQueryChange = viewModel::onLibrarySearchChange,
                     onOpenWork = viewModel::openWork,
                     onCloseWork = viewModel::closeWork,
-                    onClose = viewModel::closeLibrary,
+                    onShowFiles = viewModel::showFiles,
+                    onGoToSetup = { viewModel.navigate(Destination.SETUP) },
                 )
-            }
-            return@Scaffold
-        }
 
-        if (state.historyOpen) {
-            Column(modifier = column) {
-                HistorySheet(
-                    history = state.history,
-                    onUndo = viewModel::undoBatch,
-                    onClose = viewModel::closeHistory,
-                )
-            }
-            return@Scaffold
-        }
-
-        Column(
-            modifier = column,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            SetupSection(
-                state = state,
-                onPickFolder = { folderPicker.launch(null) },
-                onPickDat = { datPicker.launch(arrayOf("*/*")) },
-            )
-
-            ScanSection(
-                state = state,
-                onScan = viewModel::startScan,
-                onCancel = viewModel::cancelScan,
-            )
-
-            if (state.phase == WorkflowPhase.PREVIEWING || state.phase == WorkflowPhase.FINISHED) {
-                PreviewSection(
+                Destination.FILES -> FilesScreen(
                     state = state,
+                    onFilter = viewModel::filterBy,
+                    onReview = viewModel::openReview,
+                    onToggleConfirm = viewModel::toggleConfirmation,
+                    onBuildPreview = viewModel::buildPreview,
                     onDryRun = { viewModel.executeRenames(dryRun = true) },
                     onExecute = { viewModel.executeRenames(dryRun = false) },
+                    onScan = viewModel::startScan,
+                    onCancel = viewModel::cancelScan,
                 )
-            }
 
-            if (state.results.isNotEmpty()) {
-                Button(
-                    onClick = viewModel::buildPreview,
-                    enabled = state.canPreview,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Preview rename")
-                }
-            }
+                Destination.ACTIVITY -> ActivityScreen(
+                    history = state.history,
+                    notices = state.notices,
+                    onUndo = viewModel::undoBatch,
+                )
 
-            OutlinedButton(
-                onClick = viewModel::openLibrary,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Browse your library")
-            }
-
-            OutlinedButton(
-                onClick = viewModel::openHistory,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("What RetroVault has renamed")
-            }
-
-            ResultsList(
-                results = state.results,
-                confirmed = state.confirmed,
-                onToggle = viewModel::toggleConfirmation,
-                onReview = viewModel::openReview,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            if (state.notices.isNotEmpty()) {
-                NoticeList(state.notices)
+                Destination.SETUP -> SetupScreen(
+                    state = state,
+                    onPickFolder = { folderPicker.launch(null) },
+                    onPickDat = { datPicker.launch(arrayOf("*/*")) },
+                    onScan = viewModel::startScan,
+                    onCancel = viewModel::cancelScan,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SetupSection(state: ScannerUiState, onPickFolder: () -> Unit, onPickDat: () -> Unit) {
-    Card {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("1. Choose where your games are", fontWeight = FontWeight.Bold)
-            Text(
-                state.rootDisplayName?.let { "Folder: $it" }
-                    ?: "No folder chosen. RetroVault only reads the folder you pick.",
-            )
-            OutlinedButton(onClick = onPickFolder) { Text("Choose folder") }
-
-            Text("2. Add reference data", fontWeight = FontWeight.Bold)
-            Text(
-                if (state.importedDatSets.isEmpty()) {
-                    "No DAT imported. Identification works offline against the DATs you import."
-                } else {
-                    "Imported: ${state.importedDatSets.joinToString(", ")}"
+private fun RetroVaultNavigationBar(
+    current: Destination,
+    attentionCount: Int,
+    onSelect: (Destination) -> Unit,
+) {
+    NavigationBar {
+        Destination.entries.forEach { destination ->
+            NavigationBarItem(
+                selected = destination == current,
+                onClick = { onSelect(destination) },
+                icon = { Icon(destination.icon, contentDescription = null) },
+                // The count rides in the label rather than in a badge. A badge
+                // is a number with no name attached; the label already names
+                // the destination, so putting the count there means a screen
+                // reader announces "Files, 3 need attention" instead of "3".
+                label = {
+                    Text(
+                        if (destination == Destination.FILES && attentionCount > 0) {
+                            "Files ($attentionCount)"
+                        } else {
+                            destination.title
+                        },
+                    )
                 },
             )
-            OutlinedButton(onClick = onPickDat) { Text("Import DAT file") }
         }
     }
 }
 
-@Composable
-private fun ScanSection(state: ScannerUiState, onScan: () -> Unit, onCancel: () -> Unit) {
-    Card {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("3. Scan", fontWeight = FontWeight.Bold)
-            val summary = state.summary
-            // Counts, not a percentage: progress must communicate useful work
-            // rather than a bar that implies everything is fine
-            // (UX_SPEC.md section 4).
-            Text(
-                "${summary.discovered} found  ·  ${summary.processed} processed  ·  " +
-                    "${summary.exact} exact  ·  ${summary.strong} strong  ·  " +
-                    "${summary.reviewRequired} need review  ·  ${summary.ambiguous} ambiguous  ·  " +
-                    "${summary.unmatched} no match  ·  ${summary.failed} errors",
-            )
-            if (summary.hashingSkippedBySizeFilter > 0) {
-                Text(
-                    "${summary.hashingSkippedBySizeFilter} file(s) had a size no catalogue record " +
-                        "matches, so they were identified by name only.",
-                )
-            }
-            if (state.phase == WorkflowPhase.SCANNING) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text(state.currentActivity)
-                OutlinedButton(onClick = onCancel) { Text("Cancel scan") }
-            } else {
-                Button(onClick = onScan, enabled = state.canScan) { Text("Start scan") }
-            }
-        }
+private val Destination.title: String
+    get() = when (this) {
+        Destination.LIBRARY -> "Library"
+        Destination.FILES -> "Files"
+        Destination.ACTIVITY -> "Activity"
+        Destination.SETUP -> "Setup"
     }
-}
 
-@Composable
-private fun PreviewSection(state: ScannerUiState, onDryRun: () -> Unit, onExecute: () -> Unit) {
-    val preview = state.preview ?: return
-    Card {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("4. Preview", fontWeight = FontWeight.Bold)
-            Text(preview.validation.verdict.describe())
-
-            preview.validation.blockingIssues.forEach { issue ->
-                Text("Blocked: ${issue.message}")
-            }
-            preview.validation.warnings.forEach { warning ->
-                Text("Warning: ${warning.message}")
-            }
-
-            preview.rows
-                .filter { it.proposedName != null && it.proposedName != it.currentName }
-                .take(MAX_PREVIEW_ROWS)
-                .forEach { row ->
-                    Text("${row.currentName}  →  ${row.proposedName}")
-                    // The basis travels with the confidence because they answer
-                    // different questions, and the preview is where the user
-                    // decides whether to accept a rename (Constitution
-                    // section 306). Showing certainty without saying what it
-                    // rests on is exactly what UX_SPEC.md section 16 forbids.
-                    Text("    ${row.matchType} · ${row.confidence} · ${row.identityBasis}")
-                }
-
-            state.executionReport?.let { Text(it, fontWeight = FontWeight.Bold) }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onDryRun) { Text("Dry run") }
-                // Disabled until validation passes: batch execution is not
-                // offered while anything is blocked (UX_SPEC.md section 8).
-                Button(onClick = onExecute, enabled = state.canExecute) { Text("Rename") }
-            }
-        }
+private val Destination.icon: ImageVector
+    get() = when (this) {
+        Destination.LIBRARY -> Icons.Filled.Home
+        Destination.FILES -> Icons.Filled.List
+        Destination.ACTIVITY -> Icons.Filled.CheckCircle
+        Destination.SETUP -> Icons.Filled.Settings
     }
-}
-
-@Composable
-private fun ResultsList(
-    results: List<ResultRow>,
-    confirmed: Set<com.retrovault.domain.identity.ObservationId>,
-    onToggle: (com.retrovault.domain.identity.ObservationId) -> Unit,
-    onReview: (com.retrovault.domain.identity.ObservationId) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    LazyColumn(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        items(results, key = { it.observationId.value }) { row ->
-            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                // State is carried by a text label, never by colour alone
-                // (UX_SPEC.md section 5 and section 14).
-                Text(
-                    text = "${row.confidence.label()} — ${row.filename}",
-                    modifier = Modifier.semantics {
-                        contentDescription = "${row.filename}, ${row.confidence.label()}"
-                    },
-                )
-                row.identity?.let { Text("    Identified as: $it") }
-                // Section 306: "Modified" is its own state. A user must not be
-                // told their headered copy *is* the catalogued dump.
-                if (row.matchType == "MODIFIED_MATCH") {
-                    Text("    The game data matches, but this file has extra header bytes in front of it.")
-                }
-                row.reasons.take(MAX_REASONS).forEach { reason -> Text("    · $reason") }
-                if (row.candidates.size > 1) {
-                    Text("    ${row.candidates.size} candidates remain; choose one to continue.")
-                }
-                // Offered on every row, not only ambiguous ones. Section 218:
-                // a user may disagree with an exact hash match too, and the
-                // strength of RetroVault's evidence is not a reason to make
-                // saying so harder.
-                TextButton(onClick = { onReview(row.observationId) }) {
-                    Text("This is wrong / what is this?")
-                }
-                if (row.reviewable) {
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = row.observationId in confirmed,
-                            onCheckedChange = { onToggle(row.observationId) },
-                        )
-                        Text("I confirm this identification")
-                    }
-                }
-                HorizontalDivider()
-            }
-        }
-    }
-}
-
-@Composable
-private fun NoticeList(notices: List<String>) {
-    Card {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Notices", fontWeight = FontWeight.Bold)
-            notices.takeLast(MAX_NOTICES).forEach { notice -> Text(notice) }
-        }
-    }
-}
-
-/**
- * Plain words rather than jargon.
- *
- * UX_SPEC.md section 16: a heuristic match must never be presented as exact,
- * and a user must never have to understand DAT internals to read a result.
- */
-private fun ConfidenceLevel.label(): String = when (this) {
-    ConfidenceLevel.EXACT -> "Exact match"
-    ConfidenceLevel.STRONG -> "Strong match"
-    ConfidenceLevel.PROBABLE -> "Review required"
-    ConfidenceLevel.AMBIGUOUS -> "Ambiguous"
-    ConfidenceLevel.UNKNOWN -> "No match"
-}
-
-private const val MAX_PREVIEW_ROWS = 50
-private const val MAX_REASONS = 3
-private const val MAX_NOTICES = 5

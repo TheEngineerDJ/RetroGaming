@@ -57,4 +57,7 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    // Navigation icons. material3 brings this transitively, but the bar
+    // depends on it directly, so it is declared directly.
+    implementation(libs.compose.material.icons.core)
 }

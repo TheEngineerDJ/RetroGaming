@@ -5,10 +5,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.material3.MaterialTheme
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.retrovault.app.ui.RetroVaultApp
+import com.retrovault.app.ui.theme.RetroVaultTheme
 import com.retrovault.application.Outcome
 import com.retrovault.domain.identity.StorageRef
 
@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            RetroVaultTheme {
                 RetroVaultApp(
                     viewModel = viewModel,
                     onPersistFolderPermission = ::persistFolderPermission,
