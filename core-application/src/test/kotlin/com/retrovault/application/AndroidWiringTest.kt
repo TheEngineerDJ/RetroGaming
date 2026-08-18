@@ -115,6 +115,41 @@ class AndroidWiringTest {
     }
 
     /**
+     * Compose DSL functions that are members, not top-level declarations.
+     *
+     * `LazyListScope.items` is a top-level extension and imports fine;
+     * `LazyListScope.item` is an interface member and cannot be imported at
+     * all. The pair looks symmetric, so importing both is the natural mistake -
+     * and it costs a device build to find, because nothing here compiles
+     * Compose. Each of these resolves on its own from the receiver; naming it
+     * in an import is always wrong.
+     */
+    @Test
+    fun `no screen imports a Compose function that is a member rather than a declaration`() {
+        val memberOnly = setOf(
+            "androidx.compose.foundation.lazy.item",
+            "androidx.compose.foundation.lazy.stickyHeader",
+            "androidx.compose.foundation.lazy.grid.item",
+            "androidx.compose.foundation.pager.item",
+        )
+        val offenders = mutableListOf<String>()
+
+        androidSources.forEach { file ->
+            file.readLines().forEachIndexed { index, line ->
+                val imported = line.trim().removePrefix("import ").substringBefore(" as ").trim()
+                if (line.trim().startsWith("import ") && imported in memberOnly) {
+                    offenders += "${file.name}:${index + 1} imports $imported, which is a scope member"
+                }
+            }
+        }
+
+        assertTrue(
+            offenders.isEmpty(),
+            "These resolve from their receiver and cannot be imported:\n" + offenders.joinToString("\n"),
+        )
+    }
+
+    /**
      * The optional wiring the compiler cannot check for you.
      *
      * [ScanLocationUseCase] takes corrections and the entity graph as nullable
