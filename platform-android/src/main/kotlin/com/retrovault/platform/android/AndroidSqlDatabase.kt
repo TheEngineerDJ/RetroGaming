@@ -64,7 +64,7 @@ class AndroidSqlDatabase private constructor(
             },
             sql,
             EMPTY_SELECTION_ARGS,
-            null,
+            NO_EDIT_TABLE,
         ).use { cursor ->
             val rows = mutableListOf<T>()
             val row = AndroidSqlRow(cursor)
@@ -145,6 +145,18 @@ class AndroidSqlDatabase private constructor(
         const val DATABASE_NAME: String = "retrovault.db"
 
         private val EMPTY_SELECTION_ARGS = emptyArray<String>()
+
+        /**
+         * The table a cursor would write back through.
+         *
+         * A leftover of `Cursor.commitUpdates`, removed from the framework long
+         * ago; `SQLiteCursor` stores it and nothing in a read-only cursor reads
+         * it. `androidx.sqlite` passes null here, but it is Java and the
+         * parameter is annotated non-null, so Kotlin refuses. These cursors
+         * never write back, and an empty name says so without the cast that
+         * forcing a null through would need.
+         */
+        private const val NO_EDIT_TABLE = ""
 
         fun open(context: Context, name: String = DATABASE_NAME): AndroidSqlDatabase {
             val helper = object : SQLiteOpenHelper(context, name, null, Schema.CURRENT_VERSION) {
